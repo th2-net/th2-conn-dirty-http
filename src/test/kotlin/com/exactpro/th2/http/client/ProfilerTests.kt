@@ -47,7 +47,7 @@ class ProfilerTests {
         val state = object : IState {
             val requests = AtomicInteger(0)
             val responses = AtomicInteger(0)
-            override fun onResponse(response: DirtyHttpResponse) {
+            override fun onResponse(response: DirtyHttpResponse, request: DirtyHttpRequest) {
                 responses.incrementAndGet()
             }
 

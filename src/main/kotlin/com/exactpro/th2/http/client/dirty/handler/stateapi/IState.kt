@@ -23,7 +23,7 @@ import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 interface IState: AutoCloseable {
     fun onOpen() = Unit
     fun onRequest(request: DirtyHttpRequest) = Unit
-    fun onResponse(response: DirtyHttpResponse) = Unit
+    fun onResponse(response: DirtyHttpResponse, request: DirtyHttpRequest) = Unit
     fun onClose() = Unit
     override fun close() = Unit
 }

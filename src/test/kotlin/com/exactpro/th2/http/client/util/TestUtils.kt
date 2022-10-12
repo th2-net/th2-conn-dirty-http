@@ -61,7 +61,7 @@ fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = wi
         val requests = mutableListOf<DirtyHttpRequest>()
         val responses = mutableListOf<DirtyHttpResponse>()
 
-        override fun onResponse(response: DirtyHttpResponse) {
+        override fun onResponse(response: DirtyHttpResponse, request: DirtyHttpRequest) {
             responses.add(response)
         }
 
@@ -130,7 +130,7 @@ fun stressTest(times: Int, port: Int, getRequest: (Int) -> RawHttpRequest) {
     val state = object : IState {
         val requests = AtomicInteger(0)
         val responses = AtomicInteger(0)
-        override fun onResponse(response: DirtyHttpResponse) { responses.incrementAndGet() }
+        override fun onResponse(response: DirtyHttpResponse, request: DirtyHttpRequest) { responses.incrementAndGet() }
         override fun onRequest(request: DirtyHttpRequest) { requests.incrementAndGet() }
     }
 

@@ -28,8 +28,8 @@ import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.DirtyRequestDecoder
 import io.netty.handler.codec.http.HttpMethod
 import mu.KotlinLogging
-import java.lang.Exception
 import java.util.LinkedList
+import java.util.Queue
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -47,6 +47,7 @@ open class HttpHandler(private val context: IContext<IProtocolHandlerSettings>, 
     private val lastMethod = AtomicReference<HttpMethod?>(null)
 
     private var isLastResponse = AtomicBoolean(false)
+    private val dialogueQueue: Queue<(DirtyHttpResponse) -> Unit> = ConcurrentLinkedQueue()
 
     private val httpMetadataQueue = LinkedList<Map<String, String>>()
 
@@ -67,6 +68,9 @@ open class HttpHandler(private val context: IContext<IProtocolHandlerSettings>, 
                         lastMethod.set(request.method)
                         state.onRequest(request)
                         LOGGER.debug { "Sending request: $request" }
+                        dialogueQueue.offer { response: DirtyHttpResponse ->
+                            state.onResponse(response, request)
+                        }
                     }
                     httpMetadataQueue.push(metadata)
                 }
@@ -82,8 +86,7 @@ open class HttpHandler(private val context: IContext<IProtocolHandlerSettings>, 
 
     override fun onIncoming(message: ByteBuf): Map<String, String> {
         when (val mode = httpMode.get()) {
-            HttpMode.DEFAULT -> {
-                val response = responseOutputQueue.poll() as DirtyHttpResponse
+            HttpMode.DEFAULT -> responseOutputQueue.poll().let { response ->
                 if (response.decoderResult.isFailure) {
                     throw response.decoderResult.cause()
                 }
@@ -97,7 +100,7 @@ open class HttpHandler(private val context: IContext<IProtocolHandlerSettings>, 
                 when(lastMethod.get()) {
                     HttpMethod.CONNECT -> if (response.code == 200) httpMode.set(HttpMode.CONNECT)
                 }
-                state.onResponse(response)
+                dialogueQueue.poll().invoke(response)
                 return httpMetadataQueue.removeFirst()
             }
             HttpMode.CONNECT -> LOGGER.trace { "$mode: Received data passing as tcp package" }
@@ -107,9 +110,9 @@ open class HttpHandler(private val context: IContext<IProtocolHandlerSettings>, 
         return emptyMap()
     }
 
-    override fun onReceive(message: ByteBuf): ByteBuf? {
-        if (httpMode.get() == HttpMode.CONNECT) return message
-        return httpClientCodec.onResponse(message)?.let {
+    override fun onReceive(buffer: ByteBuf): ByteBuf? {
+        if (httpMode.get() == HttpMode.CONNECT) return buffer
+        return httpClientCodec.onResponse(buffer)?.let {
             LOGGER.debug { "Response message was decoded" }
             responseOutputQueue.offer(it)
             it.reference
