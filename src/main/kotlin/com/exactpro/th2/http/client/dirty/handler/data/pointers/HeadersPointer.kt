@@ -26,20 +26,16 @@ class HeadersPointer(position: Int, private var length: Int , private val refere
 
     override fun get(key: String): String? = details[key]?.value
 
-
-
-    override fun replace(key: String, value: String): String? = if (!details.containsKey(key)) {
+    override fun replace(key: String, value: String): String? = details[key]?.also { header ->
+        (header.value.length - value.length).also { amount ->
+            expansion += amount
+            length += amount
+        }
+        reference.readerIndex(header.start).replace(header.value, value)
+        modified = true
+    }?.value ?: run {
         this[key] = value
         null
-    } else {
-        details[key]!!.also { header ->
-            (header.value.length - value.length).also { amount ->
-                expansion += amount
-                length += amount
-            }
-            reference.readerIndex(header.start).replace(header.value, value)
-            modified = true
-        }.value
     }
 
     override fun put(key: String, value: String): String = if (!details.containsKey(key)) {
