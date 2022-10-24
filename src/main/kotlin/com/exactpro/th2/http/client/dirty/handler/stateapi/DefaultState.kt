@@ -25,7 +25,7 @@ import kotlin.text.Charsets.UTF_8
 @AutoService(DefaultStateSettings::class)
 class DefaultState(private val settings: DefaultStateSettings?) : IState {
     private val authHeader = settings?.run { "Basic ${Base64.getEncoder().encodeToString("${username}:${password}".toByteArray(UTF_8))}" } ?: ""
-    override fun onRequest(request: DirtyHttpRequest) {
+    override fun onRequest(channel: IChannel, request: DirtyHttpRequest) {
         if (settings != null) request.headers["Authorization"] = authHeader
     }
 }
@@ -39,5 +39,5 @@ class DefaultStateFactory : IStateFactory {
         get() = DefaultStateFactory::class.java.simpleName
     override val settings: Class<DefaultStateSettings>
         get() = DefaultStateSettings::class.java
-    override fun create(settings: IStateSettings?, channel: IChannel): IState = DefaultState(settings as? DefaultStateSettings)
+    override fun create(settings: IStateSettings?): IState = DefaultState(settings as? DefaultStateSettings)
 }

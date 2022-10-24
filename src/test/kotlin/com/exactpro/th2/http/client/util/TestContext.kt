@@ -19,16 +19,17 @@ package com.exactpro.th2.http.client.util
 import com.exactpro.th2.common.event.Event
 import com.exactpro.th2.common.schema.dictionary.DictionaryType
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
-import com.exactpro.th2.conn.dirty.tcp.core.api.IContext
-import com.exactpro.th2.conn.dirty.tcp.core.api.IProtocolHandlerSettings
+import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext
+import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings
 import java.io.InputStream
+import java.net.InetSocketAddress
 
-class TestContext(override val settings: IProtocolHandlerSettings): IContext<IProtocolHandlerSettings> {
-    override lateinit var channel: IChannel
-
-    fun init(channel: IChannel) {
-        this.channel = channel
+class TestContext(override val settings: IHandlerSettings): IHandlerContext {
+    override fun createChannel(address: InetSocketAddress, security: IChannel.Security, attributes: Map<String, Any>, autoReconnect: Boolean, reconnectDelay: Long, maxMessageRate: Int, vararg sessionSuffixes: String): IChannel {
+        error("Not yet implemented")
     }
+
+    override fun destroyChannel(channel: IChannel) = Unit
 
     override fun get(dictionary: DictionaryType): InputStream {
         error("Not yet implemented")

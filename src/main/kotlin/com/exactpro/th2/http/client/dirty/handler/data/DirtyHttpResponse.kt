@@ -17,7 +17,7 @@
 
 package com.exactpro.th2.http.client.dirty.handler.data
 
-import com.exactpro.th2.conn.dirty.tcp.core.util.replace
+import com.exactpro.th2.netty.bytebuf.util.replace
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer

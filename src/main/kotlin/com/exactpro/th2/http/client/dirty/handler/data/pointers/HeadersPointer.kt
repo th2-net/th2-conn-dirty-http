@@ -17,9 +17,9 @@
 
 package com.exactpro.th2.http.client.dirty.handler.data.pointers
 
-import com.exactpro.th2.conn.dirty.tcp.core.util.insert
-import com.exactpro.th2.conn.dirty.tcp.core.util.remove
-import com.exactpro.th2.conn.dirty.tcp.core.util.replace
+import com.exactpro.th2.netty.bytebuf.util.insert
+import com.exactpro.th2.netty.bytebuf.util.remove
+import com.exactpro.th2.netty.bytebuf.util.replace
 import io.netty.buffer.ByteBuf
 
 class HeadersPointer(position: Int, private var length: Int , private val reference: ByteBuf, private val details: MutableMap<String, HttpHeaderDetails>): Pointer(position), MutableMap<String, String> {

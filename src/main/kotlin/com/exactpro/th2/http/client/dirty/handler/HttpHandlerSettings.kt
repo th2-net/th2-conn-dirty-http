@@ -16,7 +16,8 @@
 
 package com.exactpro.th2.http.client.dirty.handler
 
-import com.exactpro.th2.conn.dirty.tcp.core.api.IProtocolHandlerSettings
+import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
+import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings
 import com.exactpro.th2.http.client.dirty.handler.stateapi.DefaultStateFactory
 import com.exactpro.th2.http.client.dirty.handler.stateapi.IStateFactory
 import com.exactpro.th2.http.client.dirty.handler.stateapi.IStateSettings
@@ -26,14 +27,17 @@ import com.fasterxml.jackson.databind.JsonDeserializer
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import com.google.auto.service.AutoService
 
-@AutoService(IProtocolHandlerSettings::class)
-class HttpHandlerSettings: IProtocolHandlerSettings {
+@AutoService(IHandlerSettings::class)
+class HttpHandlerSettings: IHandlerSettings {
     var defaultHeaders: Map<String, List<String>> = mapOf()
 
     @JsonDeserialize(using = StateSettingsDeserializer::class)
     var stateSettings: IStateSettings? = null
 
     var validation = false
+    var host: String = ""
+    var port = 80
+    var security: IChannel.Security = IChannel.Security()
 }
 
 class StateSettingsDeserializer<T : IStateSettings>() : JsonDeserializer<T>() {

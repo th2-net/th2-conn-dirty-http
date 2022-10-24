@@ -17,31 +17,29 @@
 package com.exactpro.th2.http.client
 
 import com.exactpro.th2.common.event.Event
-import com.exactpro.th2.common.grpc.MessageID
 import com.exactpro.th2.common.schema.dictionary.DictionaryType
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
-import com.exactpro.th2.conn.dirty.tcp.core.api.IContext
-import com.exactpro.th2.conn.dirty.tcp.core.api.IProtocolHandlerSettings
-import com.exactpro.th2.conn.dirty.tcp.core.api.impl.Channel
+import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext
+import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings
 import com.exactpro.th2.http.client.dirty.handler.HttpHandler
 import com.exactpro.th2.http.client.dirty.handler.HttpHandlerSettings
 import com.exactpro.th2.http.client.dirty.handler.stateapi.IState
-import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import mu.KotlinLogging
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
 import java.io.InputStream
 import java.lang.StringBuilder
 import java.net.InetSocketAddress
 import java.nio.charset.Charset
-import java.util.concurrent.Future
 
 class HandlerTests {
 
     @Test
     fun `single response`() {
-        Assertions.assertTrue(createHandler().onReceive(Unpooled.buffer().writeBytes(httpResponse.toByteArray()))!=null)
+        val channel = mock<IChannel>()
+        Assertions.assertTrue(createHandler().onReceive(channel, Unpooled.buffer().writeBytes(httpResponse.toByteArray()))!=null)
     }
 
     @Test
@@ -80,12 +78,13 @@ class HandlerTests {
     }
 
     private fun HttpHandler.testResponse(data: String, chunkSize: Int, expectCount: Int) {
+        val channel = mock<IChannel>()
         var resultCount = 0
 
         if (chunkSize == 0) {
             val byteBuf = Unpooled.buffer().writeBytes(data.toByteArray())
             while (byteBuf.isReadable) {
-                onReceive(byteBuf) ?: break
+                onReceive(channel, byteBuf) ?: break
                 resultCount++
             }
         } else {
@@ -94,7 +93,7 @@ class HandlerTests {
             chunks.forEach { chunk ->
                 val byteBuf = Unpooled.buffer().writeBytes(buffer.append(chunk).toString().toByteArray())
                 while (byteBuf.isReadable) {
-                    onReceive(byteBuf) ?: break
+                    onReceive(channel, byteBuf) ?: break
                     resultCount++
                 }
 
@@ -111,27 +110,16 @@ class HandlerTests {
     }
 
     private fun createHandler(): HttpHandler {
-        val context = object : IContext<IProtocolHandlerSettings> {
-            override val channel: IChannel
-                get() = object : IChannel {
-                    override val address: InetSocketAddress
-                        get() = InetSocketAddress("testHost", 25565)
-                    override val isOpen: Boolean
-                        get() = true
-                    override val security: Channel.Security
-                        get() = error("Not yet implemented")
+        val context = object : IHandlerContext {
 
-                    override fun close() = Unit
-                    override fun open() = Unit
-                    override fun open(address: InetSocketAddress, security: Channel.Security) = Unit
-
-                    override fun send(message: ByteBuf, metadata: Map<String, String>, mode: IChannel.SendMode): Future<MessageID> {
-                        error("Not yet implemented")
-                    }
-
-                }
-            override val settings: IProtocolHandlerSettings
+            override val settings: IHandlerSettings
                 get() = error("Not yet implemented")
+
+            override fun createChannel(address: InetSocketAddress, security: IChannel.Security, attributes: Map<String, Any>, autoReconnect: Boolean, reconnectDelay: Long, maxMessageRate: Int, vararg sessionSuffixes: String): IChannel {
+                error("Not yet implemented")
+            }
+
+            override fun destroyChannel(channel: IChannel) = Unit
 
             override fun get(dictionary: DictionaryType): InputStream {
                 error("Not yet implemented")

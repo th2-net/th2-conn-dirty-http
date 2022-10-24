@@ -16,6 +16,7 @@
 
 package com.exactpro.th2.http.client
 
+import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodPointer
@@ -31,12 +32,14 @@ import io.netty.handler.codec.http.HttpMethod
 import io.netty.handler.codec.http.HttpVersion
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
 import java.util.Base64
 
 class StateTests {
 
     @Test
     fun `default authHeader test`() {
+        val channel = mock<IChannel>()
         val requestString = """
             GET /test HTTP/1.1${"\r"}
             Accept: Something${"\r"}
@@ -58,7 +61,7 @@ class StateTests {
         val password = "test_password"
         val state = DefaultState(DefaultStateSettings(user, password))
         val request = DirtyHttpRequest(MethodPointer(0, HttpMethod.GET), StringPointer(5, "/test"), VersionPointer(11, HttpVersion.HTTP_1_1), BodyPointer(82, buffer, 25), container, buffer)
-        state.onRequest(request)
+        state.onRequest(channel, request)
         val auth = request.headers["Authorization"]
         Assertions.assertNotNull(auth)
         Base64.getDecoder().decode(auth!!.removePrefix("Basic ")).let { userAndPass ->

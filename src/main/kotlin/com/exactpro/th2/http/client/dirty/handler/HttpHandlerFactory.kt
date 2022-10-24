@@ -16,16 +16,16 @@
 
 package com.exactpro.th2.http.client.dirty.handler
 
-import com.exactpro.th2.conn.dirty.tcp.core.api.IContext
-import com.exactpro.th2.conn.dirty.tcp.core.api.IProtocolHandlerFactory
-import com.exactpro.th2.conn.dirty.tcp.core.api.IProtocolHandlerSettings
+import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext
+import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerFactory
+import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings
 import com.exactpro.th2.http.client.dirty.handler.stateapi.DefaultStateFactory
 import com.exactpro.th2.http.client.dirty.handler.stateapi.IStateFactory
 import com.google.auto.service.AutoService
 import mu.KotlinLogging
 
-@AutoService(IProtocolHandlerFactory::class)
-class HttpHandlerFactory: IProtocolHandlerFactory {
+@AutoService(IHandlerFactory::class)
+class HttpHandlerFactory: IHandlerFactory {
 
     private val stateFactory = load<IStateFactory>(DefaultStateFactory::class.java).also {
         LOGGER.info { "Loaded state factory: ${it.name}" }
@@ -33,10 +33,10 @@ class HttpHandlerFactory: IProtocolHandlerFactory {
 
     override val name: String
         get() = HttpHandlerFactory::class.java.name
-    override val settings: Class<out IProtocolHandlerSettings> = HttpHandlerSettings::class.java
+    override val settings: Class<out IHandlerSettings> = HttpHandlerSettings::class.java
 
-    override fun create(context: IContext<IProtocolHandlerSettings>): HttpHandler = (context.settings as HttpHandlerSettings).let { settings ->
-        HttpHandler(context, stateFactory.create(settings.stateSettings, context.channel), settings)
+    override fun create(context: IHandlerContext): HttpHandler = (context.settings as HttpHandlerSettings).let { settings ->
+        HttpHandler(context, stateFactory.create(settings.stateSettings), settings)
     }
 
     companion object {

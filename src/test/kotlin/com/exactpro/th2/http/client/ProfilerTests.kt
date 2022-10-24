@@ -16,6 +16,7 @@
 
 package com.exactpro.th2.http.client
 
+import com.exactpro.th2.common.grpc.EventID
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
 import com.exactpro.th2.http.client.dirty.handler.HttpHandler
 import com.exactpro.th2.http.client.dirty.handler.HttpHandlerSettings
@@ -47,22 +48,21 @@ class ProfilerTests {
         val state = object : IState {
             val requests = AtomicInteger(0)
             val responses = AtomicInteger(0)
-            override fun onResponse(response: DirtyHttpResponse, request: DirtyHttpRequest) {
+            override fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) {
                 responses.incrementAndGet()
             }
 
-            override fun onRequest(request: DirtyHttpRequest) {
+            override fun onRequest(channel: IChannel, request: DirtyHttpRequest) {
                 requests.incrementAndGet()
             }
         }
 
         val client = createClient(HttpHandler(testContext, state, testContext.settings as HttpHandlerSettings), 10, port, true).apply { open() }
-        testContext.init(client)
 
         val request = createRequest(port).toString().toByteArray(Charset.defaultCharset())
 
         while (true) {
-            client.send(Unpooled.buffer().writeBytes(request), mapOf(), IChannel.SendMode.HANDLE)
+            client.send(Unpooled.buffer().writeBytes(request), mutableMapOf<String, String>(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
             Thread.sleep(pauseBetweenRequests)
         }
 

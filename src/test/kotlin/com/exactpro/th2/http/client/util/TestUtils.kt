@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 private val LOGGER = KotlinLogging.logger { }
 
-fun IChannel.send(request: RawHttpRequest, metadata: Map<String, String>) = this.send(Unpooled.buffer().writeBytes(request.toString().toByteArray()), metadata, IChannel.SendMode.HANDLE)
+fun IChannel.send(request: RawHttpRequest, metadata: MutableMap<String, String>) = this.send(Unpooled.buffer().writeBytes(request.toString().toByteArray()), metadata, EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
 
 fun waitUntil(timeout: Long, step: Long = 100, check: () -> Boolean) {
     LOGGER.info {"Start waiting for positive check"}
@@ -61,24 +61,27 @@ fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = wi
         val requests = mutableListOf<DirtyHttpRequest>()
         val responses = mutableListOf<DirtyHttpResponse>()
 
-        override fun onResponse(response: DirtyHttpResponse, request: DirtyHttpRequest) {
+        override fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) {
             responses.add(response)
         }
 
-        override fun onRequest(request: DirtyHttpRequest) {
+        override fun onRequest(channel: IChannel, request: DirtyHttpRequest) {
             requests.add(request)
         }
     }
 
     val client = createClient(HttpHandler(testContext, state, testContext.settings as HttpHandlerSettings), 10, port)
-    testContext.init(client)
 
     val requests = getRequests(port)
     try {
         requests.forEachIndexed { index, request ->
             if (!client.isOpen) client.open()
 
-            client.send(request, mapOf())
+            waitUntil(5000) {
+                client.isOpen
+            }
+
+            client.send(Unpooled.buffer().writeBytes(request.toString().toByteArray()), mutableMapOf(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
 
             waitUntil(2500) {
                 state.responses.isNotEmpty()
@@ -130,19 +133,22 @@ fun stressTest(times: Int, port: Int, getRequest: (Int) -> RawHttpRequest) {
     val state = object : IState {
         val requests = AtomicInteger(0)
         val responses = AtomicInteger(0)
-        override fun onResponse(response: DirtyHttpResponse, request: DirtyHttpRequest) { responses.incrementAndGet() }
-        override fun onRequest(request: DirtyHttpRequest) { requests.incrementAndGet() }
+        override fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) { responses.incrementAndGet() }
+        override fun onRequest(channel: IChannel, request: DirtyHttpRequest) { requests.incrementAndGet() }
     }
 
     val client = createClient(HttpHandler(testContext, state, testContext.settings as HttpHandlerSettings), 10, port)
-    testContext.init(client)
+    if (!client.isOpen) client.open()
+    waitUntil(5000) {
+        client.isOpen
+    }
 
     val request = getRequest(port).toString().toByteArray()
 
     try {
         repeat(times) {
             if (!client.isOpen) client.open()
-            client.send(Unpooled.buffer().writeBytes(request), mapOf(), IChannel.SendMode.HANDLE)
+            client.send(Unpooled.buffer().writeBytes(request), mutableMapOf(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
         }
 
         waitUntil(10000) {
@@ -161,7 +167,9 @@ fun stressTest(times: Int, port: Int, getRequest: (Int) -> RawHttpRequest) {
 
 fun createClient(handler: HttpHandler, corePoolSize: Int, serverPort: Int, autoReconnect: Boolean = false): IChannel = Channel(
     InetSocketAddress("localhost", serverPort),
-    Channel.Security(),
+    IChannel.Security(),
+    mapOf(),
+    "group",
     "alias",
     autoReconnect,
     5000,
