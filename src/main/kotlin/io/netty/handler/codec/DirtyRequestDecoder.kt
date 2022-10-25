@@ -25,6 +25,7 @@ import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
 import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
+import com.exactpro.th2.http.client.dirty.handler.skipReaderIndex
 import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.HttpMethod
@@ -34,6 +35,13 @@ class DirtyRequestDecoder: ByteToMessageDecoder() {
 
     private val startLineParser: StartLineParser = StartLineParser()
     private val headerParser: HeaderParser = HeaderParser()
+
+
+    override fun decode(ctx: ChannelHandlerContext, msg: ByteBuf, out: MutableList<Any>) {
+        decodeSingle(msg)?.let {
+            out.add(it)
+        }
+    }
 
     fun decodeSingle(buffer: ByteBuf): DirtyHttpRequest? {
         if (!startLineParser.parseLine(buffer)) return null
@@ -52,13 +60,8 @@ class DirtyRequestDecoder: ByteToMessageDecoder() {
         val url = startLine[1].let { StringPointer(it.second, it.first) }
         val version = startLine[2].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) }
         val headerContainer = HeadersPointer(startOfHeaders, endOfHeaders-startOfHeaders, buffer, headers)
+        buffer.skipReaderIndex()
 
-        return DirtyHttpRequest(method, url, version, body, headerContainer, buffer)
-    }
-
-    override fun decode(ctx: ChannelHandlerContext, msg: ByteBuf, out: MutableList<Any>) {
-        decodeSingle(msg)?.let {
-            out.add(it)
-        }
+        return DirtyHttpRequest(method, url, version, body, headerContainer, buffer.retainedDuplicate().resetReaderIndex())
     }
 }

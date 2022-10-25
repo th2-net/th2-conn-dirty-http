@@ -39,6 +39,7 @@ class HeadersPointer(position: Int, private var length: Int , private val refere
     }
 
     override fun put(key: String, value: String): String = if (!details.containsKey(key)) {
+        reference.resetReaderIndex()
         val additional = "$key: $value\r\n"
         val endOfHeaders = position + length
         reference.insert(additional, endOfHeaders)

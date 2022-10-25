@@ -18,6 +18,7 @@
 package com.exactpro.th2.http.client.dirty.handler.parsers
 
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer.HttpHeaderDetails
+import com.exactpro.th2.http.client.dirty.handler.resetMarkReaderIndex
 import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.http.HttpConstants
 import io.netty.util.internal.AppendableCharSequence
@@ -44,6 +45,7 @@ class HeaderParser: LineParser {
             nameBuilder.removeCR()
             if(nameBuilder.isEmpty()) {
                 buffer.resetReaderIndex()
+                buffer.resetMarkReaderIndex()
                 return true
             }
             valueBuilder.removeCR()

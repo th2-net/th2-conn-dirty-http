@@ -29,7 +29,6 @@ import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 import com.exactpro.th2.http.client.dirty.handler.stateapi.IState
 import com.google.auto.service.AutoService
 import io.netty.buffer.ByteBuf
-import io.netty.handler.codec.DirtyRequestDecoder
 import io.netty.handler.codec.http.HttpMethod
 import mu.KotlinLogging
 import org.apache.commons.lang3.exception.ExceptionUtils
@@ -47,7 +46,6 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
 
     private val responseOutputQueue = ConcurrentLinkedQueue<DirtyHttpResponse>()
 
-    private val requestDecoder = DirtyRequestDecoder()
     private val httpClientCodec = DirtyHttpClientCodec()
 
     private val httpMode = AtomicReference(HttpMode.DEFAULT)
@@ -71,7 +69,7 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
     override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>) {
         try {
             when (val mode = httpMode.get()) {
-                HttpMode.DEFAULT -> checkNotNull(requestDecoder.decodeSingle(message)) { "Failed request decode" }.let { request ->
+                HttpMode.DEFAULT -> httpClientCodec.onRequest(message).let { request ->
                     isLastResponse.set(!request.isKeepAlive())
                     settings.defaultHeaders.forEach {
                         if (!request.headers.contains(it.key)){

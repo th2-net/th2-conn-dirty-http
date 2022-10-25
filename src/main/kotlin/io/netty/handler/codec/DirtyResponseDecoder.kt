@@ -85,7 +85,7 @@ class DirtyResponseDecoder: ByteToMessageDecoder() {
                     val parts = lineParser.lineParts
                     lineParser.reset()
                     if (parts.size < 3) {
-                        throw IllegalStateException("Start line is less than 3 parts")
+                        return false
                     }
                     currentMessageBuilder.setVersion(parts[0].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) })
                     currentMessageBuilder.setCode(parts[1].let { IntPointer(it.second, it.first.toInt()) })

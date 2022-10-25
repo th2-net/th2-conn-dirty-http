@@ -42,3 +42,12 @@ fun HeadersPointer.HttpHeaderDetails.move(step: Int) {
     this.start += step
     this.end += step
 }
+
+fun ByteBuf.resetMarkReaderIndex(): ByteBuf {
+    val lastIndex = readerIndex()
+    readerIndex(0)
+    markReaderIndex()
+    return readerIndex(lastIndex)
+}
+
+fun ByteBuf.skipReaderIndex(): ByteBuf = readerIndex(writerIndex())
