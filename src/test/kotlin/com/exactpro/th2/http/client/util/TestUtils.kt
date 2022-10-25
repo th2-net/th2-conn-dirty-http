@@ -144,11 +144,12 @@ fun stressTest(times: Int, port: Int, getRequest: (Int) -> RawHttpRequest) {
     }
 
     val request = getRequest(port).toString().toByteArray()
-
+    var sentRequests = 0
     try {
         repeat(times) {
             if (!client.isOpen) client.open()
             client.send(Unpooled.buffer().writeBytes(request), mutableMapOf(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
+            sentRequests++
         }
 
         waitUntil(10000) {
@@ -161,6 +162,7 @@ fun stressTest(times: Int, port: Int, getRequest: (Int) -> RawHttpRequest) {
         Assertions.assertEquals(state.requests.get(), state.responses.get()) {"Requests and response count must be same: (req) ${state.requests.get()} != ${state.responses.get()} (res)"}
     } finally {
         client.close()
+        LOGGER.info { "Sent $sentRequests requests, received: ${state.responses.get()} responses" }
     }
 
 }
