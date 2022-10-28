@@ -56,14 +56,14 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
 
     private var address: InetSocketAddress = InetSocketAddress(settings.host, settings.port)
 
-    @Volatile
-    private var channel: IChannel? = null
+    @Volatile private lateinit var channel: IChannel
 
     override fun onStart() {
         isLastResponse.set(false)
         httpMode.set(HttpMode.DEFAULT)
         lastMethod.set(null)
         channel = context.createChannel(address, settings.security, mapOf(), false, 0L, Integer.MAX_VALUE)
+        state.onStart(channel)
     }
 
     override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>) {
@@ -161,7 +161,6 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
     override fun onOpen(channel: IChannel) {
         this.channel = channel
         hostValue = channel.address.let { "${it.hostString}:${it.port}" }
-        state.onOpen()
     }
 
     companion object {
