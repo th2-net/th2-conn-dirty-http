@@ -21,8 +21,8 @@ import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 
 interface IState: AutoCloseable {
-    fun onOpen() = Unit
-    fun onRequest(channel: IChannel, request: DirtyHttpRequest, ) = Unit
+    fun onStart(channel: IChannel) = Unit
+    fun onRequest(channel: IChannel, request: DirtyHttpRequest) = Unit
     fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) = Unit
     fun onClose() = Unit
     override fun close() = Unit
