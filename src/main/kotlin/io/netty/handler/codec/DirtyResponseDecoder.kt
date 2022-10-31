@@ -8,6 +8,7 @@ import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
 import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
+import com.exactpro.th2.netty.bytebuf.util.indexOf
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
@@ -104,13 +105,41 @@ class DirtyResponseDecoder: ByteToMessageDecoder() {
                     return decodeSingle(buffer)
                 }
                 State.READ_FIXED_LENGTH_CONTENT -> {
+                    // Reader index of buffer right now on free line position right before body
+                    if (buffer.writerIndex() < buffer.readerIndex() + 2) return false
                     val headers = checkNotNull(currentMessageBuilder.headers)
-                    headers["Content-Length"]?.toInt()?.let { contentLength ->
-                        currentMessageBuilder.setBody(BodyPointer(buffer.readerIndex(), buffer, contentLength))
-                        if (buffer.writerIndex() < buffer.readerIndex() + contentLength) return false
-                        buffer.readerIndex(buffer.readerIndex() + contentLength)
-                    } ?: currentMessageBuilder.setBody(BodyPointer.Empty(buffer.readerIndex(), buffer))
-
+                    val startOfTheBody = buffer.readerIndex() + 1
+                    when {
+                        headers.contains("Content-Length") -> headers["Content-Length"]!!.toInt().let { contentLengthInt ->
+                            if (contentLengthInt==0) {
+                                currentMessageBuilder.setBody(BodyPointer.Empty(buffer.readerIndex(), buffer))
+                                buffer.readerIndex(startOfTheBody)
+                            } else {
+                                if (buffer.writerIndex() < startOfTheBody + contentLengthInt) return false
+                                currentMessageBuilder.setBody(BodyPointer(startOfTheBody, buffer, contentLengthInt))
+                                buffer.readerIndex(startOfTheBody + contentLengthInt)
+                            }
+                        }
+                        headers["Transfer-Encoding"]?.contains("chunked") == true -> {
+                            val indexOfEndPattern = buffer.indexOf("\r\n0\r\n\r\n")
+                            val endOfTheBody = indexOfEndPattern+7
+                            when {
+                                indexOfEndPattern == buffer.readerIndex() -> {
+                                    currentMessageBuilder.setBody(BodyPointer.Empty(startOfTheBody, buffer))
+                                    buffer.readerIndex(endOfTheBody)
+                                }
+                                indexOfEndPattern < 0 -> return false
+                                else -> {
+                                    currentMessageBuilder.setBody(BodyPointer(startOfTheBody, buffer, endOfTheBody-startOfTheBody))
+                                    buffer.readerIndex(endOfTheBody)
+                                }
+                            }
+                        }
+                        else -> {
+                            currentMessageBuilder.setBody(BodyPointer.Empty(startOfTheBody, buffer))
+                            buffer.readerIndex(startOfTheBody)
+                        }
+                    }
                     currentState = State.SKIP_CONTROL_CHARS
                     return true
                 }

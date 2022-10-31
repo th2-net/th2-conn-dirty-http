@@ -112,9 +112,11 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
                 when(lastMethod.get()) {
                     HttpMethod.CONNECT -> if (response.code == 200) httpMode.set(HttpMode.CONNECT)
                 }
-                val (metadata, dialogue) = dialogueQueue.poll()
-                dialogue.invoke(response)
-                return metadata
+
+                return checkNotNull(dialogueQueue.poll()) {"Response must be received exactly for each request, there no response handlers in dialogue queue"}.let { (metadata, dialogue) ->
+                    dialogue.invoke(response)
+                    metadata
+                }
             }
             HttpMode.CONNECT -> LOGGER.trace { "$mode: Received data passing as tcp package" }
             else -> error("Unsupported http mode: $mode")

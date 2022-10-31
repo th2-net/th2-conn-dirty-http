@@ -30,16 +30,54 @@ import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import java.io.InputStream
-import java.lang.StringBuilder
 import java.net.InetSocketAddress
 import java.nio.charset.Charset
+import kotlin.text.StringBuilder
 
 class HandlerTests {
 
     @Test
     fun `single response`() {
         val channel = mock<IChannel>()
-        Assertions.assertTrue(createHandler().onReceive(channel, Unpooled.buffer().writeBytes(httpResponse.toByteArray()))!=null)
+
+        createHandler().let { handler ->
+            handler.onOutgoing(channel, Unpooled.buffer().writeBytes("GET /test HTTP/1.1\r\nHost: localhost\r\nContent-Length: 12\r\n\r\nTest Body\r\n".toByteArray()), mutableMapOf())
+            val response = handler.onReceive(channel, Unpooled.buffer().writeBytes(httpResponse.toByteArray()))
+            Assertions.assertNotNull(response) { "Response must be parsed" }
+            handler.onIncoming(channel, response!!)
+        }
+
+        createHandler().let { handler ->
+            handler.onOutgoing(channel, Unpooled.buffer().writeBytes("GET /test HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n6\r\nTest \r\n4\r\nBody\r\n0\r\n\r\n".toByteArray()), mutableMapOf())
+            val response = handler.onReceive(channel, Unpooled.buffer().writeBytes(buildString {
+                append("HTTP/1.1 200 OK\r\n")
+                append("Content-Type: plain/text\r\n")
+                append("Transfer-Encoding: chunked\r\n")
+                append("\r\n")
+                append("6\r\n")
+                append("Test \r\n")
+                append("4\r\n")
+                append("Body\r\n")
+                append("0\r\n")
+                append("\r\n")
+            }.toByteArray()))
+            Assertions.assertNotNull(response) { "Response must be parsed" }
+            handler.onIncoming(channel, response!!)
+        }
+
+        createHandler().let { handler ->
+            handler.onOutgoing(channel, Unpooled.buffer().writeBytes("GET /test HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n6\r\nTest \r\n4\r\nBody\r\n0\r\n\r\n".toByteArray()), mutableMapOf())
+            val response = handler.onReceive(channel, Unpooled.buffer().writeBytes(buildString {
+                append("HTTP/1.1 200 OK\r\n")
+                append("Content-Type: plain/text\r\n")
+                append("Transfer-Encoding: chunked\r\n")
+                append("\r\n")
+                append("0\r\n")
+                append("\r\n")
+            }.toByteArray()))
+            Assertions.assertNotNull(response) { "Response must be parsed" }
+            handler.onIncoming(channel, response!!)
+        }
     }
 
     @Test
@@ -77,8 +115,86 @@ class HandlerTests {
         createHandler().testResponse(httpResponse + "HTTP/1.1", 0, 1)
     }
 
+    @Test
+    fun `body chunked response`() {
+        createHandler().testChunkedBodyResponse("Please pass the test, body is chunked", 5)
+    }
+
+    private fun HttpHandler.testChunkedBodyResponse(body: String, chunkLength: Int) {
+        val channel = mock<IChannel>()
+        onOutgoing(channel, Unpooled.buffer().writeBytes("GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n".toByteArray()), mutableMapOf())
+        var resultCount = 0
+
+        if (chunkLength == 0) {
+            val byteBuf = Unpooled.buffer().writeBytes("POST /test HTTP/1.1\r\nContent-Length: ${body.length}\r\nContent-Type: plain/text\r\n\r\n$body".toByteArray())
+            while (byteBuf.isReadable) {
+                val resultMessage = onReceive(channel, byteBuf) ?: break
+                resultCount++
+                onIncoming(channel, resultMessage)
+            }
+        } else {
+            val firstPartOfResponse = buildString {
+                append("HTTP/1.1 200 ok\r\n")
+                append("Transfer-Encoding: chunked\r\n")
+                append("\r\n")
+            }
+
+            val byteBufFirstPart = Unpooled.buffer().writeBytes(firstPartOfResponse.toByteArray())
+            while (byteBufFirstPart.isReadable) {
+                val resultMessage = onReceive(channel, byteBufFirstPart) ?: break
+                resultCount++
+                onIncoming(channel, resultMessage)
+            }
+
+            val buffer = StringBuilder().also {
+                if (byteBufFirstPart.readableBytes() > 0) {
+                    it.append(byteBufFirstPart.readCharSequence(byteBufFirstPart.readableBytes(), Charset.defaultCharset()))
+                }
+            }
+
+            byteBufFirstPart.release()
+
+            val chunks = body.chunked(body.length/chunkLength)
+
+            for (i in 0..chunks.size) {
+                val byteBuf = Unpooled.buffer().writeBytes(buffer.append(buildString {
+                    if (i == chunks.size) {
+                        append(0)
+                        append("\r\n")
+                        append("\r\n")
+                    } else {
+                        chunks[i].let { chunk ->
+                            append(chunk.length)
+                            append("\r\n")
+                            append(chunk)
+                            append("\r\n")
+                        }
+                    }
+                }).toString().toByteArray())
+
+                while (byteBuf.isReadable) {
+                    val resultMessage = onReceive(channel, byteBuf) ?: break
+                    resultCount++
+                    onIncoming(channel, resultMessage)
+                }
+
+                buffer.clear()
+                if (byteBuf.readableBytes() > 0) {
+                    buffer.append(byteBuf.readCharSequence(byteBuf.readableBytes(), Charset.defaultCharset()))
+                }
+                byteBuf.release()
+            }
+
+            Assertions.assertEquals(1, resultCount)
+            LOGGER.info { "Test with chunked body: [$body] was passed" }
+        }
+    }
+
     private fun HttpHandler.testResponse(data: String, chunkSize: Int, expectCount: Int) {
         val channel = mock<IChannel>()
+        for (i in 0 until expectCount) {
+            onOutgoing(channel, Unpooled.buffer().writeBytes("GET /test$i HTTP/1.1\r\nHost: localhost\r\n\r\n".toByteArray()), mutableMapOf())
+        }
         var resultCount = 0
 
         if (chunkSize == 0) {
@@ -93,8 +209,9 @@ class HandlerTests {
             chunks.forEach { chunk ->
                 val byteBuf = Unpooled.buffer().writeBytes(buffer.append(chunk).toString().toByteArray())
                 while (byteBuf.isReadable) {
-                    onReceive(channel, byteBuf) ?: break
+                    val resultMessage = onReceive(channel, byteBuf) ?: break
                     resultCount++
+                    onIncoming(channel, resultMessage)
                 }
 
                 buffer.clear()
