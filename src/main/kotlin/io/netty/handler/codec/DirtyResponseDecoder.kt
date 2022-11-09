@@ -106,12 +106,12 @@ class DirtyResponseDecoder: ByteToMessageDecoder() {
                 }
                 State.READ_FIXED_LENGTH_CONTENT -> {
                     // Reader index of buffer right now on free line position right before body
-                    if (buffer.writerIndex() < buffer.readerIndex() + 2) return false
+                    val startOfTheBody = buffer.readerIndex() + 2
+                    if (buffer.writerIndex() < startOfTheBody) return false
                     val headers = checkNotNull(currentMessageBuilder.headers)
-                    val startOfTheBody = buffer.readerIndex() + 1
                     when {
                         headers.contains("Content-Length") -> headers["Content-Length"]!!.toInt().let { contentLengthInt ->
-                            if (contentLengthInt==0) {
+                            if (contentLengthInt == 0) {
                                 currentMessageBuilder.setBody(BodyPointer.Empty(buffer.readerIndex(), buffer))
                                 buffer.readerIndex(startOfTheBody)
                             } else {

@@ -32,7 +32,6 @@ import org.mockito.kotlin.mock
 import java.io.InputStream
 import java.net.InetSocketAddress
 import java.nio.charset.Charset
-import kotlin.text.StringBuilder
 
 class HandlerTests {
 
@@ -259,7 +258,7 @@ class HandlerTests {
             Content-Length: 205
             
             { "id" : 901, "name" : { "first":"Tom", "middle":"and", "last":"Jerry" }, "phones" : [ {"type" : "home", "number" : "1233333" }, {"type" : "work", "number" : "264444" }], "lazy" : false, "married" : null }
-        """.trimIndent()
+        """.trimIndent().replace("\n", "\r\n")
     }
 
 }
