@@ -62,6 +62,6 @@ class DirtyRequestDecoder: ByteToMessageDecoder() {
         val headerContainer = HeadersPointer(startOfHeaders, endOfHeaders - startOfHeaders, buffer, headers)
         buffer.skipReaderIndex()
 
-        return DirtyHttpRequest(method, url, version, body, headerContainer, buffer.retainedDuplicate().resetReaderIndex())
+        return DirtyHttpRequest(method, url, version, body, headerContainer, buffer.retain())
     }
 }
