@@ -17,10 +17,10 @@
 
 package io.netty.handler.codec
 
+import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodPointer
-import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
 import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
@@ -54,12 +54,12 @@ class DirtyRequestDecoder: ByteToMessageDecoder() {
         val headers = headerParser.getHeaders()
         headerParser.reset()
         val endOfHeaders = buffer.readerIndex()
-        val body = BodyPointer(buffer.readerIndex(), buffer, buffer.writerIndex()-buffer.readerIndex())
+        val body = BodyPointer(buffer.readerIndex(), buffer, buffer.writerIndex() - buffer.readerIndex())
 
         val method = startLine[0].let { MethodPointer(it.second, HttpMethod.valueOf(it.first)) }
         val url = startLine[1].let { StringPointer(it.second, it.first) }
         val version = startLine[2].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) }
-        val headerContainer = HeadersPointer(startOfHeaders, endOfHeaders-startOfHeaders, buffer, headers)
+        val headerContainer = HeadersPointer(startOfHeaders, endOfHeaders - startOfHeaders, buffer, headers)
         buffer.skipReaderIndex()
 
         return DirtyHttpRequest(method, url, version, body, headerContainer, buffer.retainedDuplicate().resetReaderIndex())

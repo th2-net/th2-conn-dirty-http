@@ -17,12 +17,13 @@
 
 package com.exactpro.th2.http.client.dirty.handler.data
 
-import com.exactpro.th2.netty.bytebuf.util.replace
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
+import com.exactpro.th2.http.client.dirty.handler.skipReaderIndex
+import com.exactpro.th2.netty.bytebuf.util.replace
 import io.netty.buffer.ByteBuf
 
 class DirtyHttpRequest(private val httpMethod: MethodPointer, private val httpUrl: StringPointer, httpVersion: VersionPointer, httpBody: BodyPointer, headers: HeadersPointer, reference: ByteBuf): DirtyHttpMessage(httpVersion, headers, httpBody, reference) {
@@ -38,7 +39,9 @@ class DirtyHttpRequest(private val httpMethod: MethodPointer, private val httpUr
     var url: String
         get() = httpUrl.value
         set(value) = this.httpUrl.let {
-            reference.replace(it.position, reference.writerIndex(), value)
+            reference.readerIndex(it.position)
+            reference.replace(it.position, it.position + it.value.length, value)
+            reference.skipReaderIndex()
             it.value = value
             settle()
         }
