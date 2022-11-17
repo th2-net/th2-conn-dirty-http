@@ -128,6 +128,7 @@ class HandlerTests {
             val byteBuf = Unpooled.buffer().writeBytes("POST /test HTTP/1.1\r\nContent-Length: ${body.length}\r\nContent-Type: plain/text\r\n\r\n$body".toByteArray())
             while (byteBuf.isReadable) {
                 val resultMessage = onReceive(channel, byteBuf) ?: break
+                Assertions.assertEquals(httpResponse, resultMessage)
                 resultCount++
                 onIncoming(channel, resultMessage)
             }
@@ -141,6 +142,7 @@ class HandlerTests {
             val byteBufFirstPart = Unpooled.buffer().writeBytes(firstPartOfResponse.toByteArray())
             while (byteBufFirstPart.isReadable) {
                 val resultMessage = onReceive(channel, byteBufFirstPart) ?: break
+                Assertions.assertEquals(httpResponse, resultMessage)
                 resultCount++
                 onIncoming(channel, resultMessage)
             }
@@ -173,6 +175,7 @@ class HandlerTests {
 
                 while (byteBuf.isReadable) {
                     val resultMessage = onReceive(channel, byteBuf) ?: break
+                    Assertions.assertEquals(httpResponse, resultMessage)
                     resultCount++
                     onIncoming(channel, resultMessage)
                 }
@@ -199,7 +202,8 @@ class HandlerTests {
         if (chunkSize == 0) {
             val byteBuf = Unpooled.buffer().writeBytes(data.toByteArray())
             while (byteBuf.isReadable) {
-                onReceive(channel, byteBuf) ?: break
+                val resultMessage = onReceive(channel, byteBuf) ?: break
+                Assertions.assertEquals(httpResponse, resultMessage)
                 resultCount++
             }
         } else {
@@ -209,6 +213,7 @@ class HandlerTests {
                 val byteBuf = Unpooled.buffer().writeBytes(buffer.append(chunk).toString().toByteArray())
                 while (byteBuf.isReadable) {
                     val resultMessage = onReceive(channel, byteBuf) ?: break
+                    Assertions.assertEquals(httpResponse, resultMessage)
                     resultCount++
                     onIncoming(channel, resultMessage)
                 }
