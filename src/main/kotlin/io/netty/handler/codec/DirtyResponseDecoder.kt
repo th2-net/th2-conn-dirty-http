@@ -60,13 +60,14 @@ class DirtyResponseDecoder: ByteToMessageDecoder() {
     }
 
     override fun decode(ctx: ChannelHandlerContext, `in`: ByteBuf, out: MutableList<Any>) {
-        val beforeDecode = `in`.readerIndex()
-        val result = decodeSingle(`in`)
-        cumulation.writeBytes(`in`, beforeDecode, `in`.readerIndex() - beforeDecode)
-        if (result) {
-            out.add(currentMessageBuilder.build(cumulation.retainedDuplicate()))
+        if (decodeSingle(cumulation.writeBytes(`in`))) {
+            out.add(currentMessageBuilder.build(cumulation.copy(0, cumulation.readerIndex())))
+            if (cumulation.readerIndex() < cumulation.writerIndex()) {
+                val newCumulation = cumulation.copy(cumulation.readerIndex(), cumulation.writerIndex() - cumulation.readerIndex())
+                cumulation.release()
+                cumulation = newCumulation
+            } else cumulation.clear()
             currentMessageBuilder = DirtyHttpResponse.Builder()
-            cumulation.clear()
         }
     }
 
@@ -74,7 +75,7 @@ class DirtyResponseDecoder: ByteToMessageDecoder() {
      * @return true if decode was completed
      */
     private fun decodeSingle(buffer: ByteBuf): Boolean {
-        if (!buffer.isReadable) false
+        if (!buffer.isReadable) return false
         try {
             when(currentState) {
                 State.SKIP_CONTROL_CHARS -> {

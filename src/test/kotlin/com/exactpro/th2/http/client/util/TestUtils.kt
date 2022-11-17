@@ -31,6 +31,7 @@ import mu.KotlinLogging
 import org.junit.jupiter.api.Assertions
 import rawhttp.core.RawHttpRequest
 import java.net.InetSocketAddress
+import java.nio.charset.Charset
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -60,14 +61,17 @@ fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = wi
     val state = object : IState {
         val requests = mutableListOf<DirtyHttpRequest>()
         val responses = mutableListOf<DirtyHttpResponse>()
+        val rawResponses = mutableListOf<String>()
 
         override fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) {
             responses.add(response)
+            rawResponses.add(response.reference.readerIndex(0).toString(Charset.defaultCharset()))
         }
 
         override fun onRequest(channel: IChannel, request: DirtyHttpRequest) {
             requests.add(request)
         }
+
     }
 
     val client = createClient(HttpHandler(testContext, state, testContext.settings as HttpHandlerSettings), 10, port)
@@ -98,6 +102,12 @@ fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = wi
                     Assertions.assertEquals(null, resultResponse.headers["Content-Type"])
                     Assertions.assertEquals("0", resultResponse.headers["Content-Length"])
                 }
+                val originalResponse = when(request.method) {
+                    "HEAD" -> ServerIncluded.createResponse(false, true)
+                    "CONNECT" -> ServerIncluded.createResponse(false, false)
+                    else -> ServerIncluded.createResponse()
+                }
+                Assertions.assertEquals(originalResponse, state.rawResponses.first())
 //                Assertions.assertEquals(if (withBody) ServerIncluded.responseContentLength else 0, resultResponse.content().writerIndex()) // --> released after use
             }
             state.requests.first().also { resultRequest ->
@@ -117,6 +127,7 @@ fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = wi
 
             state.requests.clear()
             state.responses.clear()
+            state.rawResponses.clear()
 
             LOGGER.debug { "TEST [${request.method}] [${index + 1}]: PASSED" }
         }

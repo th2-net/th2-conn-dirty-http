@@ -68,8 +68,8 @@ abstract class ServerIncluded {
         }
         private lateinit var server: HttpServer
 
-        private fun createResponse(withBody: Boolean = true, withBodyHeaders: Boolean = withBody): String {
-            return """HTTP/1.1 200 OK ${if (withBodyHeaders) "\nContent-Type: plain/text\nContent-Length:  ${if (withBody) responseContentLength else "0"}" else "\nContent-Length: 0"}${if (withBody) "\n\n$responseBody" else ""}"""
+        fun createResponse(withBody: Boolean = true, withBodyHeaders: Boolean = withBody): String {
+            return """HTTP/1.1 200 OK ${if (withBodyHeaders) "\r\nContent-Type: plain/text\r\nContent-Length: ${if (withBody) responseContentLength else "0"}" else "\r\nContent-Length: 0"}${if (withBody) "\r\n\r\n$responseBody" else ""}"""
         }
 
         fun RawHttp.parseResponse(response: String, linkedData: LinkedData): RawHttpResponse<LinkedData> {
