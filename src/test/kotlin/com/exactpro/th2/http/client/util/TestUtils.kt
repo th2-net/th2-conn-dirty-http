@@ -157,12 +157,11 @@ fun stressTest(times: Int, port: Int, getRequest: (Int) -> RawHttpRequest) {
         client.isOpen
     }
 
-    val request = getRequest(port).toString().toByteArray()
     var sentRequests = 0
     try {
         repeat(times) {
             if (!client.isOpen) client.open()
-            client.send(Unpooled.buffer().writeBytes(request), mutableMapOf(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
+            client.send(Unpooled.buffer().writeBytes(getRequest(port).toString().toByteArray()), mutableMapOf(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
             sentRequests++
         }
 
