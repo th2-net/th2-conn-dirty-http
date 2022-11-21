@@ -2,16 +2,24 @@ package com.exactpro.th2.http.client.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 import com.exactpro.th2.http.client.dirty.handler.data.NettyHttpVersion
-import io.netty.channel.ChannelHandler
+import io.netty.buffer.ByteBuf
+import io.netty.buffer.Unpooled
 import io.netty.channel.embedded.EmbeddedChannel
 import io.netty.handler.codec.DecoderResult
 import io.netty.handler.codec.DirtyResponseDecoder
 import mu.KotlinLogging
 import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.nio.charset.Charset
 
-class ResponseCodecTests: ChannelHandlerTest() {
+class ResponseCodecTests {
+
+    @BeforeEach
+    fun `after each`() {
+        currentBuffer.release()
+        currentBuffer = Unpooled.buffer()
+    }
 
     @Test
     fun `fully response decode`() {
@@ -174,7 +182,25 @@ class ResponseCodecTests: ChannelHandlerTest() {
         while(inboundMessages().size != 0) messageAssertion(readInbound())
     }
 
-    override fun createHandler(): ChannelHandler = DirtyResponseDecoder()
+    private fun createChannel() = EmbeddedChannel(DirtyResponseDecoder())
+
+    private fun EmbeddedChannel.decode(data: String) {
+        currentBuffer.writeBytes(data.toByteArray())
+        while (currentBuffer.isReadable) {
+            if (writeAndCheckInbound(currentBuffer)) {
+                currentBuffer.discardReadBytes()
+            } else break
+        }
+    }
+
+    private var currentBuffer: ByteBuf = Unpooled.buffer()
+
+
+    private fun EmbeddedChannel.writeAndCheckInbound(msg: Any): Boolean {
+        val lastResult = inboundMessages().size
+        writeInbound(msg)
+        return lastResult != inboundMessages().size
+    }
 
     companion object {
         private val LOGGER = KotlinLogging.logger { this::class.java.simpleName }

@@ -1,14 +1,14 @@
 package com.exactpro.th2.http.client.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
-import io.netty.channel.ChannelHandler
+import io.netty.buffer.Unpooled
 import io.netty.channel.embedded.EmbeddedChannel
 import io.netty.handler.codec.DirtyRequestDecoder
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import java.nio.charset.Charset
 
-class RequestCodecTests: ChannelHandlerTest() {
+class RequestCodecTests {
 
     @Test
     fun `Request decode`() {
@@ -21,7 +21,7 @@ class RequestCodecTests: ChannelHandlerTest() {
             """.trimIndent().replace("\n", "\r\n")
         val channel = createChannel()
         try {
-            channel.testRequest(requestString) {
+            channel.decode(requestString) {
                 Assertions.assertEquals("POST", it.method.name())
                 Assertions.assertEquals("/test/demo_form.php", it.url)
                 Assertions.assertEquals("HTTP/1.1", it.version.text())
@@ -45,14 +45,17 @@ class RequestCodecTests: ChannelHandlerTest() {
             """.trimIndent().replace("\n", "\r\n")
         val channel = createChannel()
         try {
-            channel.testRequest(requestString, requestString, requestString) {
-                Assertions.assertEquals("POST", it.method.name())
-                Assertions.assertEquals("/test/demo_form.php", it.url)
-                Assertions.assertEquals("HTTP/1.1", it.version.text())
-                Assertions.assertEquals("w3schools.com", it.headers["Host"])
-                Assertions.assertEquals("name1=value1&name2=value2", it.body.toString(Charset.defaultCharset()))
-                Assertions.assertEquals(requestString, it.reference.readerIndex(0).toString(Charset.defaultCharset()))
+            repeat(3) {
+                channel.decode(requestString) {
+                    Assertions.assertEquals("POST", it.method.name())
+                    Assertions.assertEquals("/test/demo_form.php", it.url)
+                    Assertions.assertEquals("HTTP/1.1", it.version.text())
+                    Assertions.assertEquals("w3schools.com", it.headers["Host"])
+                    Assertions.assertEquals("name1=value1&name2=value2", it.body.toString(Charset.defaultCharset()))
+                    Assertions.assertEquals(requestString, it.reference.readerIndex(0).toString(Charset.defaultCharset()))
+                }
             }
+
         } finally {
             channel.close().sync()
         }
@@ -68,7 +71,7 @@ class RequestCodecTests: ChannelHandlerTest() {
             """.trimIndent().replace("\n", "\r\n")
         val channel = createChannel()
         try {
-            channel.testRequest(requestString) {
+            channel.decode(requestString) {
                 Assertions.assertEquals("POST", it.method.name())
                 Assertions.assertEquals("/test/demo_form.php", it.url)
                 Assertions.assertEquals("HTTP/1.1", it.version.text())
@@ -81,16 +84,14 @@ class RequestCodecTests: ChannelHandlerTest() {
         }
     }
 
-    private fun EmbeddedChannel.testRequest(vararg data: String, messageAssertion: (DirtyHttpRequest) -> Unit) {
-
-        data.forEach {
-            decode(it)
-        }
-
-        Assertions.assertEquals(data.size, inboundMessages().size) {"Test with request data:\n==============\n$data\n==============\nmust have been recognized as ${data.size} messages"}
+    private fun EmbeddedChannel.decode(data: String, messageAssertion: (DirtyHttpRequest) -> Unit) {
+        val currentBuffer = Unpooled.buffer().writeBytes(data.toByteArray())
+        writeInbound(currentBuffer)
+        Assertions.assertEquals(inboundMessages().size, 1)
         while(inboundMessages().size != 0) messageAssertion(readInbound())
     }
 
-    override fun createHandler(): ChannelHandler = DirtyRequestDecoder()
+
+    private fun createChannel() = EmbeddedChannel(DirtyRequestDecoder())
 
 }

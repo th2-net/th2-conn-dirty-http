@@ -9,6 +9,7 @@ import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
 import com.exactpro.th2.netty.bytebuf.util.indexOf
 import io.netty.buffer.ByteBuf
+import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.HttpVersion
 import mu.KotlinLogging
@@ -38,10 +39,31 @@ class DirtyResponseDecoder: ByteToMessageDecoder() {
         }
     }
 
+    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+        if (msg is ByteBuf) {
+            val out = CodecOutputList.newInstance()
+            try {
+                callDecode(ctx, msg, out)
+            } catch (e: DecoderException) {
+                throw e
+            } catch (e: Exception) {
+                throw DecoderException(e)
+            } finally {
+                try {
+                    val size = out.size
+                    fireChannelRead(ctx, out, size)
+                } finally {
+                    out.recycle()
+                }
+            }
+        } else {
+            ctx.fireChannelRead(msg)
+        }
+    }
+
     override fun decode(ctx: ChannelHandlerContext, `in`: ByteBuf, out: MutableList<Any>) {
         if (decodeSingle(`in`)) {
             out.add(currentMessageBuilder.build(`in`.copy(0, `in`.readerIndex())))
-            cumulation.discardReadBytes()
             reset()
         } else {
             `in`.readerIndex(0)

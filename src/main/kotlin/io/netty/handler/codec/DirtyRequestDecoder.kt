@@ -36,6 +36,27 @@ class DirtyRequestDecoder: ByteToMessageDecoder() {
     private val startLineParser: StartLineParser = StartLineParser()
     private val headerParser: HeaderParser = HeaderParser()
 
+    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+        if (msg is ByteBuf) {
+            val out = CodecOutputList.newInstance()
+            try {
+                callDecode(ctx, msg, out)
+            } catch (e: DecoderException) {
+                throw e
+            } catch (e: Exception) {
+                throw DecoderException(e)
+            } finally {
+                try {
+                    val size = out.size
+                    fireChannelRead(ctx, out, size)
+                } finally {
+                    out.recycle()
+                }
+            }
+        } else {
+            ctx.fireChannelRead(msg)
+        }
+    }
 
     override fun decode(ctx: ChannelHandlerContext, msg: ByteBuf, out: MutableList<Any>) {
         decodeSingle(msg)?.let {

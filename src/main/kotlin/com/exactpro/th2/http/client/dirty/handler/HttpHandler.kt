@@ -127,7 +127,7 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
 
     override fun onReceive(channel: IChannel, buffer: ByteBuf): ByteBuf? {
         if (httpMode.get() == HttpMode.CONNECT) return buffer
-        return httpClientCodec.onResponse(buffer.retain())?.let {
+        return httpClientCodec.onResponse(buffer)?.let {
             LOGGER.debug { "Response message was decoded" }
             responseOutputQueue.offer(it)
             it.reference
