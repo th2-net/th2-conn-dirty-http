@@ -43,25 +43,27 @@ class DirtyRequestDecoder: ByteToMessageDecoder() {
         }
     }
 
-    fun decodeSingle(buffer: ByteBuf): DirtyHttpRequest? {
+    private fun decodeSingle(buffer: ByteBuf): DirtyHttpRequest? {
         if (!startLineParser.parseLine(buffer)) return null
         val startLine = startLineParser.lineParts
         startLineParser.reset()
         if (startLine.size < 3) return null
+
+        val method = startLine[0].let { MethodPointer(it.second, HttpMethod.valueOf(it.first)) }
+        val url = startLine[1].let { StringPointer(it.second, it.first) }
+        val version = startLine[2].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) }
 
         val startOfHeaders = buffer.readerIndex()
         if (!headerParser.parseHeaders(buffer)) return null
         val headers = headerParser.getHeaders()
         headerParser.reset()
         val endOfHeaders = buffer.readerIndex()
-        val body = BodyPointer(buffer.readerIndex(), buffer, buffer.writerIndex() - buffer.readerIndex())
+        val reference = buffer.retain()
+        val headerContainer = HeadersPointer(startOfHeaders, endOfHeaders - startOfHeaders, reference, headers)
 
-        val method = startLine[0].let { MethodPointer(it.second, HttpMethod.valueOf(it.first)) }
-        val url = startLine[1].let { StringPointer(it.second, it.first) }
-        val version = startLine[2].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) }
-        val headerContainer = HeadersPointer(startOfHeaders, endOfHeaders - startOfHeaders, buffer, headers)
+        val body = BodyPointer(reference, buffer.readerIndex(), buffer.writerIndex() - buffer.readerIndex())
         buffer.skipReaderIndex()
 
-        return DirtyHttpRequest(method, url, version, body, headerContainer, buffer.retain())
+        return DirtyHttpRequest(method, url, version, body, headerContainer, reference)
     }
 }

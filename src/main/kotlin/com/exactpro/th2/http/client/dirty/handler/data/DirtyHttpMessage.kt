@@ -55,6 +55,11 @@ abstract class DirtyHttpMessage(protected val httpVersion: VersionPointer, val h
         return sum
     }
 
+    abstract class HttpBuilder {
+        abstract fun build(reference: ByteBuf): DirtyHttpMessage
+        abstract fun setDecodeResult(result: DecoderResult)
+    }
+
     companion object {
         fun Pointer.settleSingle(amount: Int): Int {
             move(amount)

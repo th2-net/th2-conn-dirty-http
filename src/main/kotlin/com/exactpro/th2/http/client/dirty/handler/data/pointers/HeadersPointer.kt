@@ -22,7 +22,10 @@ import com.exactpro.th2.netty.bytebuf.util.remove
 import com.exactpro.th2.netty.bytebuf.util.replace
 import io.netty.buffer.ByteBuf
 
-class HeadersPointer(position: Int, private var length: Int , private val reference: ByteBuf, private val details: MutableMap<String, HttpHeaderDetails>): Pointer(position), MutableMap<String, String> {
+class HeadersPointer(position: Int, length: Int  , private val reference: ByteBuf, private val details: MutableMap<String, HttpHeaderDetails>): Pointer(position), MutableMap<String, String> {
+
+    var length: Int = length
+        private set
 
     override fun get(key: String): String? = details[key]?.value
 
@@ -42,7 +45,7 @@ class HeadersPointer(position: Int, private var length: Int , private val refere
         reference.resetReaderIndex()
         val additional = "$key: $value\r\n"
         val endOfHeaders = position + length
-        reference.insert(additional, endOfHeaders)
+        reference.insert(additional, endOfHeaders-2)
         length+=additional.length
         expansion+=additional.length
         modified = true

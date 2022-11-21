@@ -19,6 +19,6 @@ package com.exactpro.th2.http.client.dirty.handler.data.pointers
 
 import io.netty.buffer.ByteBuf
 
-open class BodyPointer(position: Int, val reference: ByteBuf, val length: Int): Pointer(position) {
-    class Empty(position: Int, reference: ByteBuf): BodyPointer(position, reference, 0)
+open class BodyPointer(val reference: ByteBuf, position: Int, val length: Int): Pointer(position) {
+    class Empty(reference: ByteBuf, position: Int): BodyPointer(reference, position, 0)
 }

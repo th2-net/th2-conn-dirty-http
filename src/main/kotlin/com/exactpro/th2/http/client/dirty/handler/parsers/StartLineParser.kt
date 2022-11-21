@@ -31,14 +31,14 @@ class StartLineParser: LineParser {
 
     override fun parseLine(buffer: ByteBuf): Boolean {
         startOfElement = buffer.readerIndex()
-        return super.parseLine(buffer).also {
-            if (it) {
-                if (builder.isNotEmpty() && builder.charAtUnsafe(builder.length - 1).code.toByte() == HttpConstants.CR) builder.setLength(builder.length - 1)
-                settlePart()
-            } else {
-                reset()
-            }
+        val result = super.parseLine(buffer)
+        if (result) {
+            if (builder.isNotEmpty() && builder.charAtUnsafe(builder.length - 1).code.toByte() == HttpConstants.CR) builder.setLength(builder.length - 1)
+            settlePart()
+        } else {
+            reset()
         }
+        return result
     }
 
     override fun parse(byte: Byte, index: Int) {

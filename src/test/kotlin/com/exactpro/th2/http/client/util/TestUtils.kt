@@ -48,11 +48,11 @@ fun waitUntil(timeout: Long, step: Long = 100, check: () -> Boolean) {
     }
 }
 
-fun simpleTestSingle(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = withBody, getRequest: (Int) -> RawHttpRequest) {
-    simpleTest(port, withBody, withBodyHeader) { listOf(getRequest(it)) }
+fun simpleTestSingle(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = withBody, keepAlive: Boolean = false, getRequest: (Int) -> RawHttpRequest) {
+    simpleTest(port, withBody, withBodyHeader, keepAlive) { listOf(getRequest(it)) }
 }
 
-fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = withBody, getRequests: (Int) -> List<RawHttpRequest>) {
+fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = withBody, keepAlive: Boolean = false, getRequests: (Int) -> List<RawHttpRequest>) {
     val defaultHeaders = mapOf("Accept-Encoding" to listOf("gzip", "deflate"))
     val testContext = TestContext(HttpHandlerSettings().apply {
         this.defaultHeaders = defaultHeaders
@@ -75,14 +75,16 @@ fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = wi
     }
 
     val client = createClient(HttpHandler(testContext, state, testContext.settings as HttpHandlerSettings), 10, port)
+    if (!client.isOpen) client.open()
+    waitUntil(2000, 250, client::isOpen)
 
     val requests = getRequests(port)
     try {
         requests.forEachIndexed { index, request ->
-            if (!client.isOpen) client.open()
-
-            waitUntil(5000) {
-                client.isOpen
+            if (!client.isOpen) {
+                Assertions.assertTrue(!keepAlive) {"Connection must be continuous, was broken before ${index+1}th request"}
+                client.open()
+                waitUntil(2000, 250, client::isOpen)
             }
 
             client.send(Unpooled.buffer().writeBytes(request.toString().toByteArray()), mutableMapOf(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
@@ -92,6 +94,7 @@ fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = wi
             }
             Assertions.assertEquals(1, state.requests.size)
             Assertions.assertEquals(1, state.responses.size)
+            LOGGER.info { "Request ${request.method} sent and got response" }
             state.responses.first().also { resultResponse ->
                 Assertions.assertEquals(200, resultResponse.code)
                 Assertions.assertEquals("OK", resultResponse.reason)

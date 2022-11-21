@@ -13,13 +13,13 @@ class RequestDataTests {
     @Test
     fun `Header tests`() {
         val requestString = """
-            POST /test/demo_form.php HTTP/1.1${"\r"}
-            Accept: Something${"\r"}
-            Connection: close${"\r"}
-            Host: w3schools.com${"\r"}
-            ${"\r"}
+            POST /test/demo_form.php HTTP/1.1
+            Accept: Something
+            Connection: close
+            Host: w3schools.com
+            
             name1=value1&name2=value2
-        """.trimIndent()
+        """.trimIndent().replace("\n", "\r\n")
         val buffer = Unpooled.buffer().writeBytes(requestString.toByteArray())
 
         val headerParser = HeaderParser()
@@ -44,7 +44,7 @@ class RequestDataTests {
             Host: w3schools.com
             
             name1=value1&name2=value2
-        """.trimIndent(), buffer.readerIndex(0).toString(Charset.defaultCharset()))
+        """.trimIndent().replace("\n", "\r\n"), buffer.readerIndex(0).toString(Charset.defaultCharset()))
 
         Assertions.assertEquals(null, resultHeaders["Accept"])
         Assertions.assertEquals("close", resultHeaders["Connection"])
@@ -63,7 +63,7 @@ class RequestDataTests {
             Accept: Something
             
             name1=value1&name2=value2
-        """.trimIndent(), buffer.readerIndex(0).toString(Charset.defaultCharset()).replace("\r", ""))
+        """.trimIndent().replace("\n", "\r\n"), buffer.readerIndex(0).toString(Charset.defaultCharset()))
 
         resultHeaders["Test"] = "value"
 
@@ -80,6 +80,6 @@ class RequestDataTests {
             Test: value
             
             name1=value1&name2=value2
-        """.trimIndent(), buffer.readerIndex(0).toString(Charset.defaultCharset()).replace("\r", ""))
+        """.trimIndent().replace("\n", "\r\n"), buffer.readerIndex(0).toString(Charset.defaultCharset()))
     }
 }

@@ -27,7 +27,7 @@ import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.DecoderResult
 import io.netty.handler.codec.http.HttpVersion
 
-class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPointer, private val httpReason: StringPointer, httpBody: BodyPointer, headers: HeadersPointer, reference: ByteBuf, decoderResult: DecoderResult = DecoderResult.SUCCESS): DirtyHttpMessage(httpVersion, headers, httpBody, reference, decoderResult) {
+class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPointer, private val httpReason: StringPointer, headers: HeadersPointer, httpBody: BodyPointer, reference: ByteBuf, decoderResult: DecoderResult = DecoderResult.SUCCESS): DirtyHttpMessage(httpVersion, headers, httpBody, reference, decoderResult) {
 
     var code: Int
         get() = httpCode.value
@@ -59,7 +59,7 @@ class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPo
         return super.settle(sum)
     }
 
-    class Builder {
+    class Builder: HttpBuilder() {
         var decodeResult: DecoderResult = DecoderResult.SUCCESS
             private set
         var version: VersionPointer? = null
@@ -70,10 +70,12 @@ class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPo
             private set
         var headers: HeadersPointer? = null
             private set
-        var body: BodyPointer? = null
+        var bodyPosition: Int? = null
+            private set
+        var bodyLength: Int? = null
             private set
 
-        fun setDecodeResult(result: DecoderResult) {
+        override fun setDecodeResult(result: DecoderResult) {
             this.decodeResult = result
         }
 
@@ -93,19 +95,26 @@ class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPo
             this.headers = headers
         }
 
-        fun setBody(body: BodyPointer) {
-            this.body = body
+        fun setBodyLength(length: Int) {
+            this.bodyLength = length
         }
 
-        private fun createError(reference: ByteBuf, decoderResult: DecoderResult) = DirtyHttpResponse(VersionPointer(0, HttpVersion.HTTP_1_1), IntPointer(0,0), StringPointer(0,""), BodyPointer(0, reference, 0), HeadersPointer(0, 0, reference, mutableMapOf()), reference, decoderResult)
+        fun setBodyPosition(pos: Int) {
+            this.bodyPosition = pos
+        }
 
-        fun build(reference: ByteBuf): DirtyHttpResponse = if (decodeResult.isSuccess) {
+        private fun createError(reference: ByteBuf, decoderResult: DecoderResult) = DirtyHttpResponse(VersionPointer(0, HttpVersion.HTTP_1_1), IntPointer(0,0), StringPointer(0,""), HeadersPointer(0, 0, reference, mutableMapOf()), BodyPointer(reference, 0, 0), reference, decoderResult)
+
+        override fun build(reference: ByteBuf): DirtyHttpResponse = if (decodeResult.isSuccess) {
+            checkNotNull(bodyPosition) {"Body is required"}
+            checkNotNull(bodyLength) {"Body is required"}
+            val bodyPointer = if (bodyLength == 0) BodyPointer.Empty(reference, bodyPosition!!) else BodyPointer(reference, bodyPosition!!, bodyLength!!)
             DirtyHttpResponse(
                 checkNotNull(version) {"Version is required"},
                 checkNotNull(code) {"Code is required"},
                 checkNotNull(reason) {"Reason is required"},
-                checkNotNull(body) {"Body is required"},
                 checkNotNull(headers) {"Header is required"},
+                bodyPointer,
                 reference
             )
         } else {

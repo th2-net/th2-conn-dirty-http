@@ -44,7 +44,7 @@ class HeaderParser: LineParser {
 
             nameBuilder.removeCR()
             if(nameBuilder.isEmpty()) {
-                buffer.resetReaderIndex()
+//                buffer.resetReaderIndex()
                 buffer.resetMarkReaderIndex()
                 return true
             }

@@ -1,7 +1,6 @@
 package io.netty.handler.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.IntPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
@@ -10,64 +9,42 @@ import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
 import com.exactpro.th2.netty.bytebuf.util.indexOf
 import io.netty.buffer.ByteBuf
-import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.HttpVersion
+import mu.KotlinLogging
 
 class DirtyResponseDecoder: ByteToMessageDecoder() {
-    private var currentState = State.READ_INITIAL
-    private var currentMessageBuilder = DirtyHttpResponse.Builder()
+
     private val lineParser = StartLineParser()
     private val headerParser = HeaderParser()
 
-    private var firedChannelRead = false
+    private var currentState = State.READ_INITIAL
+    private var currentPosition = 0
+
+    private var currentMessageBuilder: DirtyHttpResponse.Builder = DirtyHttpResponse.Builder()
 
     init {
-        cumulation = Unpooled.buffer()
         isSingleDecode = true
-    }
-
-    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
-        if (msg is ByteBuf) {
-            val out = CodecOutputList.newInstance()
-            try {
-                callDecode(ctx, msg.retain(), out)
-            } catch (e: DecoderException) {
-                throw e
-            } catch (e: java.lang.Exception) {
-                throw DecoderException(e)
-            } finally {
-                try {
-                    val size = out.size
-                    firedChannelRead = firedChannelRead || out.insertSinceRecycled()
-                    fireChannelRead(ctx, out, size)
-                } finally {
-                    out.recycle()
-                }
+        //FIXME: need to understand how to work with default MERGE_CUMULATOR
+        setCumulator { alloc, cumulation, incoming ->
+            if (!cumulation.isWritable) {
+                cumulation.release()
+                alloc.buffer().writeBytes(incoming)
+            } else {
+                cumulation.writeBytes(incoming)
+            }.also {
+                incoming.readerIndex(incoming.writerIndex())
             }
-        } else {
-            ctx.fireChannelRead(msg)
         }
-    }
-
-    override fun channelReadComplete(ctx: ChannelHandlerContext) {
-        discardSomeReadBytes()
-        if (!firedChannelRead && !ctx.channel().config().isAutoRead) {
-            ctx.read()
-        }
-        firedChannelRead = false
-        ctx.fireChannelReadComplete()
     }
 
     override fun decode(ctx: ChannelHandlerContext, `in`: ByteBuf, out: MutableList<Any>) {
-        if (decodeSingle(cumulation.writeBytes(`in`))) {
-            out.add(currentMessageBuilder.build(cumulation.copy(0, cumulation.readerIndex())))
-            if (cumulation.readerIndex() < cumulation.writerIndex()) {
-                val newCumulation = cumulation.copy(cumulation.readerIndex(), cumulation.writerIndex() - cumulation.readerIndex())
-                cumulation.release()
-                cumulation = newCumulation
-            } else cumulation.clear()
-            currentMessageBuilder = DirtyHttpResponse.Builder()
+        if (decodeSingle(`in`)) {
+            out.add(currentMessageBuilder.build(`in`.copy(0, `in`.readerIndex())))
+            cumulation.discardReadBytes()
+            reset()
+        } else {
+            `in`.readerIndex(0)
         }
     }
 
@@ -83,86 +60,178 @@ class DirtyResponseDecoder: ByteToMessageDecoder() {
                     return decodeSingle(buffer)
                 }
                 State.READ_INITIAL -> {
+                    buffer.readerIndex(0)
                     if (!lineParser.parseLine(buffer)) return false
+
                     val parts = lineParser.lineParts
-                    lineParser.reset()
                     if (parts.size < 3) {
+                        lineParser.reset()
                         return false
                     }
-                    currentMessageBuilder.setVersion(parts[0].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) })
-                    currentMessageBuilder.setCode(parts[1].let { IntPointer(it.second, it.first.toInt()) })
-                    currentMessageBuilder.setReason( parts[2].let { StringPointer(it.second, it.first) })
+                    currentMessageBuilder.apply {
+                        setVersion(parts[0].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) })
+                        setCode(parts[1].let { IntPointer(it.second, it.first.toInt()) })
+                        setReason( parts[2].let { StringPointer(it.second, it.first) })
+                    }
+
                     currentState = State.READ_HEADER
+                    currentPosition = buffer.readerIndex()
+
                     return decodeSingle(buffer)
                 }
                 State.READ_HEADER -> {
-                    val startOfHeaders = buffer.readerIndex()
+                    buffer.readerIndex(currentPosition)
+
                     if (!headerParser.parseHeaders(buffer)) return false
                     val headers = headerParser.getHeaders()
                     headerParser.reset()
                     val endOfHeaders = buffer.readerIndex()
-                    currentMessageBuilder.setHeaders(HeadersPointer(startOfHeaders, endOfHeaders-startOfHeaders, buffer, headers))
+
+                    currentMessageBuilder.setHeaders(HeadersPointer(currentPosition, endOfHeaders-currentPosition, buffer, headers))
                     currentState = State.READ_FIXED_LENGTH_CONTENT
+                    currentPosition = buffer.readerIndex()
+
                     return decodeSingle(buffer)
                 }
-                State.READ_FIXED_LENGTH_CONTENT -> {
+                State.READ_FIXED_LENGTH_CONTENT -> checkNotNull(currentMessageBuilder.headers).let { headers ->
+                    buffer.readerIndex(currentPosition)
+
                     // Reader index of buffer right now on free line position right before body
-                    val startOfTheBody = buffer.readerIndex() + 2
-                    if (buffer.writerIndex() < startOfTheBody) return false
-                    val headers = checkNotNull(currentMessageBuilder.headers)
+                    val startOfTheBody = currentPosition
+                    var endOfTheBody = startOfTheBody
+
                     when {
                         headers.contains("Content-Length") -> headers["Content-Length"]!!.toInt().let { contentLengthInt ->
-                            if (contentLengthInt == 0) {
-                                currentMessageBuilder.setBody(BodyPointer.Empty(buffer.readerIndex(), buffer))
-                                buffer.readerIndex(startOfTheBody)
-                            } else {
+                            if (contentLengthInt != 0 ) {
                                 if (buffer.writerIndex() < startOfTheBody + contentLengthInt) return false
-                                currentMessageBuilder.setBody(BodyPointer(startOfTheBody, buffer, contentLengthInt))
-                                buffer.readerIndex(startOfTheBody + contentLengthInt)
+                                endOfTheBody = startOfTheBody + contentLengthInt
                             }
                         }
                         headers["Transfer-Encoding"]?.contains("chunked") == true -> {
-                            val indexOfEndPattern = buffer.indexOf("\r\n0\r\n\r\n")
-                            val endOfTheBody = indexOfEndPattern+7
+                            val indexOfEndPattern = buffer.indexOf("0\r\n\r\n")
                             when {
-                                indexOfEndPattern == buffer.readerIndex() -> {
-                                    currentMessageBuilder.setBody(BodyPointer.Empty(startOfTheBody, buffer))
-                                    buffer.readerIndex(endOfTheBody)
-                                }
                                 indexOfEndPattern < 0 -> return false
-                                else -> {
-                                    currentMessageBuilder.setBody(BodyPointer(startOfTheBody, buffer, endOfTheBody-startOfTheBody))
-                                    buffer.readerIndex(endOfTheBody)
-                                }
+                                else -> endOfTheBody = indexOfEndPattern+5
                             }
                         }
-                        else -> {
-                            currentMessageBuilder.setBody(BodyPointer.Empty(startOfTheBody, buffer))
-                            buffer.readerIndex(startOfTheBody)
-                        }
+                    }
+                    buffer.readerIndex(endOfTheBody)
+
+                    currentPosition = endOfTheBody
+                    currentMessageBuilder.apply {
+                        setBodyPosition(startOfTheBody)
+                        setBodyLength(endOfTheBody-startOfTheBody)
                     }
                     currentState = State.SKIP_CONTROL_CHARS
                     return true
                 }
                 else -> {
-                    throw java.lang.IllegalStateException("Wrong state of decode")
+                    throw java.lang.IllegalStateException("Unexpected state of decode: $currentState")
                 }
             }
         } catch (e: Exception) {
+            LOGGER.error(e) { "Error during response message parsing" }
             currentMessageBuilder.setDecodeResult(DecoderResult.failure(e))
-            lineParser.reset()
-            headerParser.reset()
-            reset()
             buffer.readerIndex(buffer.writerIndex())
             return true
         }
     }
 
     private fun reset() {
+        lineParser.reset()
+        headerParser.reset()
+        currentPosition = 0
+        currentMessageBuilder = DirtyHttpResponse.Builder()
         currentState = State.SKIP_CONTROL_CHARS
     }
 
     private enum class State {
         SKIP_CONTROL_CHARS, READ_INITIAL, READ_HEADER, READ_VARIABLE_LENGTH_CONTENT, READ_FIXED_LENGTH_CONTENT, READ_CHUNK_SIZE, READ_CHUNKED_CONTENT, READ_CHUNK_DELIMITER, READ_CHUNK_FOOTER, BAD_MESSAGE
+    }
+
+    companion object {
+        private val LOGGER = KotlinLogging.logger { this::class.java.simpleName }
+    }
+}
+
+// TODO: Use it instead of previous decoder but need to fix decode process, there delay between call and actual decode somehow
+class NextDirtyResponseDecoder: DirtyHttpDecoder<DirtyHttpResponse>() {
+
+    private val lineParser = StartLineParser()
+    private val headerParser = HeaderParser()
+
+    private var currentMessageBuilder: DirtyHttpResponse.Builder = DirtyHttpResponse.Builder()
+
+    override fun buildCurrentMessage(reference: ByteBuf) = currentMessageBuilder.build(reference)
+
+    override fun parseStartLine(position: Int, buffer: ByteBuf): Boolean {
+        if (!lineParser.parseLine(buffer)) return false
+
+        val parts = lineParser.lineParts
+        if (parts.size < 3) {
+            lineParser.reset()
+            return false
+        }
+        currentMessageBuilder.apply {
+            setVersion(parts[0].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) })
+            setCode(parts[1].let { IntPointer(it.second, it.first.toInt()) })
+            setReason( parts[2].let { StringPointer(it.second, it.first) })
+        }
+        return true
+    }
+
+    override fun parseHeaders(position: Int, buffer: ByteBuf): Boolean {
+        if (!headerParser.parseHeaders(buffer)) {
+            headerParser.reset()
+            return false
+        }
+        val headers = headerParser.getHeaders()
+        currentMessageBuilder.setHeaders(HeadersPointer(position, buffer.readerIndex()-position, buffer, headers))
+        return true
+    }
+
+    override fun parseBody(position: Int, buffer: ByteBuf): Boolean {
+        val headers = checkNotNull(currentMessageBuilder.headers)
+        var endOfTheBody = position
+
+        when {
+            headers.contains("Content-Length") -> headers["Content-Length"]!!.toInt().let { contentLengthInt ->
+                if (contentLengthInt != 0 ) {
+                    if (buffer.writerIndex() < position + contentLengthInt) return false
+                    endOfTheBody = position + contentLengthInt
+                }
+            }
+            headers["Transfer-Encoding"]?.contains("chunked") == true -> {
+                val indexOfEndPattern = buffer.indexOf("0\r\n\r\n")
+                when {
+                    indexOfEndPattern < 0 -> return false
+                    else -> endOfTheBody = indexOfEndPattern+5
+                }
+            }
+        }
+
+        currentMessageBuilder.apply {
+            setBodyPosition(position)
+            setBodyLength(endOfTheBody-position)
+        }
+
+        buffer.readerIndex(endOfTheBody)
+        return true
+    }
+
+    override fun onDecodeFailure(buffer: ByteBuf, e: Exception) {
+        currentMessageBuilder.setDecodeResult(DecoderResult.failure(e))
+        LOGGER.error(e) { "Error during response message parsing" }
+    }
+
+    override fun reset() {
+        super.reset()
+        lineParser.reset()
+        headerParser.reset()
+        currentMessageBuilder = DirtyHttpResponse.Builder()
+    }
+
+    companion object {
+        private val LOGGER = KotlinLogging.logger { this::class.java.simpleName }
     }
 }

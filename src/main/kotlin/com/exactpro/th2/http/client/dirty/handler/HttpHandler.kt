@@ -69,11 +69,11 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
     override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>) {
         try {
             when (val mode = httpMode.get()) {
-                HttpMode.DEFAULT -> httpClientCodec.onRequest(message).let { request ->
+                HttpMode.DEFAULT -> httpClientCodec.onRequest(message.retain()).let { request ->
                     isLastResponse.set(!request.isKeepAlive())
                     settings.defaultHeaders.forEach {
                         if (!request.headers.contains(it.key)){
-                            request.headers[it.key] = it.value.joinToString(",")
+                            request.headers[it.key] = it.value.joinToString(", ")
                         }
                     }
                     if (!request.headers.contains(HOST)){
@@ -127,7 +127,7 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
 
     override fun onReceive(channel: IChannel, buffer: ByteBuf): ByteBuf? {
         if (httpMode.get() == HttpMode.CONNECT) return buffer
-        return httpClientCodec.onResponse(buffer)?.let {
+        return httpClientCodec.onResponse(buffer.retain())?.let {
             LOGGER.debug { "Response message was decoded" }
             responseOutputQueue.offer(it)
             it.reference
