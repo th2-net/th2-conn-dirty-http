@@ -139,6 +139,12 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
             channel.runCatching { open().get() }.getOrElse { throw ExceptionUtils.rethrow(it) }
         }
 
+        if (!state.isReady) {
+            LOGGER.info { "Waiting for state to become ready" }
+            while (!state.isReady) Thread.sleep(1)
+            LOGGER.info { "State is ready" }
+        }
+
         channel.send(message.body.toByteBuf(), message.metadata.propertiesMap, message.eventId, IChannel.SendMode.HANDLE_AND_MANGLE)
     }
 

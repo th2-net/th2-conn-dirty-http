@@ -46,6 +46,7 @@ class ProfilerTests {
         })
 
         val state = object : IState {
+            override val isReady: Boolean = true
             val requests = AtomicInteger(0)
             val responses = AtomicInteger(0)
             override fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) {

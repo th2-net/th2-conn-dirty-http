@@ -97,9 +97,12 @@ class HandlerTests {
             override fun send(event: Event) {
                 error("Not yet implemented")
             }
-
         }
-        val state = object : IState {}
+        
+        val state = object : IState {
+            override val isReady: Boolean = true
+        }
+
         return HttpHandler(context, state, HttpHandlerSettings())
     }
 
