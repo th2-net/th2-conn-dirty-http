@@ -1,4 +1,4 @@
-package io.netty.handler.codec
+package com.exactpro.th2.http.client.dirty.handler.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
@@ -9,6 +9,7 @@ import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
 import com.exactpro.th2.netty.bytebuf.util.indexOf
 import io.netty.buffer.ByteBuf
+import io.netty.handler.codec.DecoderResult
 import io.netty.handler.codec.http.HttpVersion
 import mu.KotlinLogging
 
@@ -46,7 +47,7 @@ class DirtyResponseDecoder: DirtyHttpDecoder<DirtyHttpResponse>() {
         }
         val headers = headerParser.getHeaders()
         // FIXME: Need to change buffer param to something else, this buffer will be discarded due decode process
-        currentMessageBuilder.setHeaders(HeadersPointer(position, buffer.readerIndex()-position, buffer, headers))
+        currentMessageBuilder.setHeaders(HeadersPointer(position, buffer.readerIndex() - position, buffer, headers))
         return true
     }
 

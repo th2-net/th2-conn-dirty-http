@@ -1,4 +1,4 @@
-package io.netty.handler.codec
+package com.exactpro.th2.http.client.dirty.handler.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpMessage
 import io.netty.buffer.ByteBuf

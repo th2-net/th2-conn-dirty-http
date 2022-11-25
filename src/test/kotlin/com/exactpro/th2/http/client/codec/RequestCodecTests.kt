@@ -3,7 +3,7 @@ package com.exactpro.th2.http.client.codec
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
-import io.netty.handler.codec.DirtyRequestDecoder
+import com.exactpro.th2.http.client.dirty.handler.codec.DirtyRequestDecoder
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import java.nio.charset.Charset

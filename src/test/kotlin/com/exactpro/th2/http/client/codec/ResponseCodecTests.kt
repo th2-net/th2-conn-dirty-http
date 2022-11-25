@@ -5,7 +5,7 @@ import com.exactpro.th2.http.client.dirty.handler.data.NettyHttpVersion
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import io.netty.handler.codec.DecoderResult
-import io.netty.handler.codec.DirtyResponseDecoder
+import com.exactpro.th2.http.client.dirty.handler.codec.DirtyResponseDecoder
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import java.nio.charset.Charset

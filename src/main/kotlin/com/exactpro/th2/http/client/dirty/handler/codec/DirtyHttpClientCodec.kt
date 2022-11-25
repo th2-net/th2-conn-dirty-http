@@ -19,8 +19,6 @@ package com.exactpro.th2.http.client.dirty.handler.codec
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 import io.netty.buffer.ByteBuf
-import io.netty.handler.codec.DirtyRequestDecoder
-import io.netty.handler.codec.DirtyResponseDecoder
 import io.netty.handler.codec.http.HttpClientCodec
 
 /**
