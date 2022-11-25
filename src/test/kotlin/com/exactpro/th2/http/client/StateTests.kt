@@ -60,7 +60,7 @@ class StateTests {
         val user = "test_user"
         val password = "test_password"
         val state = DefaultState(DefaultStateSettings(user, password))
-        val request = DirtyHttpRequest(MethodPointer(0, HttpMethod.GET), StringPointer(5, "/test"), VersionPointer(11, HttpVersion.HTTP_1_1), BodyPointer(buffer, 82, 25), container, buffer)
+        val request = DirtyHttpRequest(MethodPointer(0, HttpMethod.GET), StringPointer(5, "/test"), VersionPointer(11, HttpVersion.HTTP_1_1), container, BodyPointer(buffer, 82, 25), buffer)
         state.onRequest(channel, request)
         val auth = request.headers["Authorization"]
         Assertions.assertNotNull(auth)

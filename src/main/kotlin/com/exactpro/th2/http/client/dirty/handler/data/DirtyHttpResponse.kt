@@ -26,6 +26,7 @@ import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
 import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.DecoderResult
 import io.netty.handler.codec.http.HttpVersion
+import java.nio.charset.Charset
 
 class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPointer, private val httpReason: StringPointer, headers: HeadersPointer, httpBody: BodyPointer, reference: ByteBuf, decoderResult: DecoderResult = DecoderResult.SUCCESS): DirtyHttpMessage(httpVersion, headers, httpBody, reference, decoderResult) {
 
@@ -57,6 +58,19 @@ class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPo
             sum = httpVersion.settleSingle(sum)
         }
         return super.settle(sum)
+    }
+
+    override fun toString(): String = buildString {
+        appendLine("${version.text()} $code $reason")
+        headers.forEach {
+            appendLine("${it.key}: ${it.value}")
+        }
+        appendLine()
+        appendLine(body.toString(Charset.defaultCharset()))
+
+        appendLine()
+        appendLine("RAW:")
+        appendLine(reference.readerIndex(0).toString(Charset.defaultCharset()))
     }
 
     class Builder: HttpBuilder() {

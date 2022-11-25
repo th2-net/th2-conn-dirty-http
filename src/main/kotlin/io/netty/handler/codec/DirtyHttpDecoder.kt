@@ -2,56 +2,58 @@ package io.netty.handler.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpMessage
 import io.netty.buffer.ByteBuf
-import io.netty.channel.ChannelHandlerContext
-import mu.KotlinLogging
 
-abstract class DirtyHttpDecoder<T: DirtyHttpMessage> : ByteToMessageDecoder() {
+abstract class DirtyHttpDecoder<T: DirtyHttpMessage> {
     private var currentState = State.READ_INITIAL
     private var currentPosition = 0
+    private var startOfMessage = 0
 
-    init {
-        isSingleDecode = true
-        this.setCumulator(COMPOSITE_CUMULATOR)
+    fun decode(input: ByteBuf): T? {
+        if (currentState != State.READ_INITIAL) shrinkIfRequired(input) // Need to check if data was discarded
+        return if (decodeSingle(input)) {
+            buildCurrentMessage(startOfMessage, currentPosition, input).also {
+                currentState = State.READ_INITIAL
+                reset()
+            }
+        } else {
+            input.readerIndex(startOfMessage)
+            null
+        }
     }
 
-    override fun decode(ctx: ChannelHandlerContext, `in`: ByteBuf, out: MutableList<Any>) {
-        if (decodeSingle(`in`)) {
-            out.add(buildCurrentMessage(`in`.copy(0, `in`.readerIndex())))
-            cumulation.discardReadBytes()
-            reset()
-        } else {
-            `in`.readerIndex(0)
+    private fun shrinkIfRequired(buffer: ByteBuf) {
+        if (buffer.writerIndex() < startOfMessage) {
+            currentPosition -= startOfMessage
+            startOfMessage = 0
         }
     }
 
     private fun decodeSingle(buffer: ByteBuf): Boolean {
-        if (!buffer.isReadable && currentState == State.FINALIZE) return false
-        buffer.readerIndex(currentPosition)
         try {
             when(currentState) {
                 State.READ_INITIAL -> {
+                    currentPosition = buffer.readerIndex()
+                    startOfMessage = currentPosition
                     if (!parseStartLine(currentPosition, buffer)) {
                         return false
                     }
                     currentState = State.READ_HEADER
                 }
                 State.READ_HEADER -> {
-                    if (!parseHeaders(currentPosition, buffer)) {
+                    if (!parseHeaders(currentPosition, buffer.readerIndex(currentPosition))) {
                         return false
                     }
                     currentState = State.READ_BODY
                 }
                 State.READ_BODY -> {
-                    if (!parseBody(currentPosition, buffer)) {
+                    if (!parseBody(currentPosition, buffer.readerIndex(currentPosition))) {
                         return false
                     }
                     currentState = State.FINALIZE
                 }
                 State.FINALIZE -> {
+                    finalize(currentPosition, buffer.readerIndex(currentPosition))
                     return true
-                }
-                else -> {
-                    throw java.lang.IllegalStateException("Unexpected state of decode: $currentState")
                 }
             }
             currentPosition = buffer.readerIndex()
@@ -63,22 +65,15 @@ abstract class DirtyHttpDecoder<T: DirtyHttpMessage> : ByteToMessageDecoder() {
         }
     }
 
-    protected abstract fun buildCurrentMessage(reference: ByteBuf): T
+    protected abstract fun buildCurrentMessage(startPos: Int, endPos: Int, originalBuf: ByteBuf): T
     protected abstract fun parseStartLine(position: Int, buffer: ByteBuf): Boolean
     protected abstract fun parseHeaders(position: Int, buffer: ByteBuf): Boolean
     protected abstract fun parseBody(position: Int, buffer: ByteBuf): Boolean
+    protected open fun finalize(position: Int, buffer: ByteBuf) = Unit
     protected abstract fun onDecodeFailure(buffer: ByteBuf, e: Exception)
-
-    protected open fun reset() {
-        currentState = State.READ_INITIAL
-        currentPosition = 0
-    }
+    protected abstract fun reset()
 
     private enum class State {
         READ_INITIAL, READ_HEADER, READ_BODY, FINALIZE
-    }
-
-    companion object {
-        private val LOGGER = KotlinLogging.logger { this::class.java.simpleName }
     }
 }

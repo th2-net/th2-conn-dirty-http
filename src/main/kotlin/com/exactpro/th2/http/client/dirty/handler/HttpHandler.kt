@@ -69,7 +69,7 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
     override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>) {
         try {
             when (val mode = httpMode.get()) {
-                HttpMode.DEFAULT -> httpClientCodec.onRequest(message.retain()).let { request ->
+                HttpMode.DEFAULT -> checkNotNull(httpClientCodec.onRequest(message.retain())) {"Failed to decode request"}.let { request ->
                     isLastResponse.set(!request.isKeepAlive())
                     settings.defaultHeaders.forEach {
                         if (!request.headers.contains(it.key)){
@@ -98,7 +98,10 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
 
     override fun onIncoming(channel: IChannel, message: ByteBuf): Map<String, String> {
         when (val mode = httpMode.get()) {
-            HttpMode.DEFAULT -> responseOutputQueue.poll().let { response ->
+            HttpMode.DEFAULT -> {
+                val response = checkNotNull(responseOutputQueue.poll()) {"OnIncoming processing with empty decode queue"}
+                val dialogue = checkNotNull(dialogueQueue.poll()) {"Response must be received exactly for each request, there no response handlers in dialogue queue"}
+
                 if (response.decoderResult.isFailure) {
                     throw response.decoderResult.cause()
                 }
@@ -113,8 +116,8 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
                     HttpMethod.CONNECT -> if (response.code == 200) httpMode.set(HttpMode.CONNECT)
                 }
 
-                return checkNotNull(dialogueQueue.poll()) {"Response must be received exactly for each request, there no response handlers in dialogue queue"}.let { (metadata, dialogue) ->
-                    dialogue.invoke(response)
+                return dialogue.let { (metadata, processor) ->
+                    processor.invoke(response)
                     metadata
                 }
             }
@@ -163,7 +166,6 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
 
     override fun close() {
         state.close()
-        httpClientCodec.close()
     }
 
     override fun onOpen(channel: IChannel) {

@@ -19,7 +19,6 @@ package com.exactpro.th2.http.client.dirty.handler.codec
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 import io.netty.buffer.ByteBuf
-import io.netty.channel.embedded.EmbeddedChannel
 import io.netty.handler.codec.DirtyRequestDecoder
 import io.netty.handler.codec.DirtyResponseDecoder
 import io.netty.handler.codec.http.HttpClientCodec
@@ -27,38 +26,16 @@ import io.netty.handler.codec.http.HttpClientCodec
 /**
  * @see HttpClientCodec
  */
-class DirtyHttpClientCodec: AutoCloseable {
+class DirtyHttpClientCodec {
     private val requestDecoder = DirtyRequestDecoder()
     private val responseDecoder = DirtyResponseDecoder()
 
-    private val requestChannel: EmbeddedChannel = EmbeddedChannel().apply {
-        this.pipeline().addLast("", requestDecoder)
-    }
 
-    private val responseChannel: EmbeddedChannel = EmbeddedChannel().apply {
-        this.pipeline().addLast("", responseDecoder)
-    }
-
-    fun onRequest(msg: ByteBuf): DirtyHttpRequest {
-        requestChannel.writeInbound(msg)
-        if (requestChannel.inboundMessages().isEmpty()) error("Cannot decode request for single attempt")
-        return requestChannel.inboundMessages().poll() as DirtyHttpRequest
+    fun onRequest(msg: ByteBuf): DirtyHttpRequest? {
+        return requestDecoder.decode(msg)
     }
 
     fun onResponse(msg: ByteBuf): DirtyHttpResponse? {
-        responseChannel.writeInbound(msg)
-        if (responseChannel.inboundMessages().size > 0) {
-            return responseChannel.inboundMessages().poll() as DirtyHttpResponse
-        }
-        return null
-    }
-
-    override fun close() {
-        requestChannel.close()
-        responseChannel.close()
-    }
-
-    companion object {
-
+        return responseDecoder.decode(msg)
     }
 }

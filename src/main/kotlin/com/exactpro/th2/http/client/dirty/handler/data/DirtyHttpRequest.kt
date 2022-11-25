@@ -25,8 +25,12 @@ import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
 import com.exactpro.th2.http.client.dirty.handler.skipReaderIndex
 import com.exactpro.th2.netty.bytebuf.util.replace
 import io.netty.buffer.ByteBuf
+import io.netty.handler.codec.DecoderResult
+import io.netty.handler.codec.http.HttpMethod
+import io.netty.handler.codec.http.HttpVersion
+import java.nio.charset.Charset
 
-class DirtyHttpRequest(private val httpMethod: MethodPointer, private val httpUrl: StringPointer, httpVersion: VersionPointer, httpBody: BodyPointer, headers: HeadersPointer, reference: ByteBuf): DirtyHttpMessage(httpVersion, headers, httpBody, reference) {
+class DirtyHttpRequest(private val httpMethod: MethodPointer, private val httpUrl: StringPointer, httpVersion: VersionPointer, headers: HeadersPointer, httpBody: BodyPointer, reference: ByteBuf, decoderResult: DecoderResult = DecoderResult.SUCCESS): DirtyHttpMessage(httpVersion, headers, httpBody, reference, decoderResult) {
 
     var method: NettyHttpMethod
         get() = httpMethod.value
@@ -60,6 +64,83 @@ class DirtyHttpRequest(private val httpMethod: MethodPointer, private val httpUr
         }
 
         return super.settle(sum)
+    }
+
+    override fun toString(): String = buildString {
+        appendLine("${method.name()} $url ${version.text()}")
+        headers.forEach {
+            appendLine("${it.key}: ${it.value}")
+        }
+        appendLine()
+        appendLine(body.toString(Charset.defaultCharset()))
+
+        appendLine()
+        appendLine("RAW:")
+        appendLine(reference.readerIndex(0).toString(Charset.defaultCharset()))
+    }
+
+    class Builder: HttpBuilder() {
+        var decodeResult: DecoderResult = DecoderResult.SUCCESS
+            private set
+        var version: VersionPointer? = null
+            private set
+        var method: MethodPointer? = null
+            private set
+        var url: StringPointer? = null
+            private set
+        var headers: HeadersPointer? = null
+            private set
+        var bodyPosition: Int? = null
+            private set
+        var bodyLength: Int? = null
+            private set
+
+        override fun setDecodeResult(result: DecoderResult) {
+            this.decodeResult = result
+        }
+
+        fun setMethod(method: MethodPointer) {
+            this.method = method
+        }
+
+        fun setUrl(url: StringPointer) {
+            this.url = url
+        }
+
+        fun setVersion(version: VersionPointer) {
+            this.version = version
+        }
+
+        fun setHeaders(headers: HeadersPointer) {
+            this.headers = headers
+        }
+
+        fun setBodyLength(length: Int) {
+            this.bodyLength = length
+        }
+
+        fun setBodyPosition(pos: Int) {
+            this.bodyPosition = pos
+        }
+
+        private fun createError(reference: ByteBuf, decoderResult: DecoderResult) = DirtyHttpRequest(MethodPointer(0, HttpMethod.GET), StringPointer(0,"/"), VersionPointer(0, HttpVersion.HTTP_1_1), HeadersPointer(0, 0, reference, mutableMapOf()), BodyPointer(reference, 0, 0), reference, decoderResult)
+
+        override fun build(reference: ByteBuf): DirtyHttpRequest = if (decodeResult.isSuccess) {
+            checkNotNull(bodyPosition) {"Body is required"}
+            checkNotNull(bodyLength) {"Body is required"}
+            val bodyPointer = if (bodyLength == 0) BodyPointer.Empty(reference, bodyPosition!!) else BodyPointer(reference, bodyPosition!!, bodyLength!!)
+            DirtyHttpRequest(
+                checkNotNull(method) {"Reason is required"},
+                checkNotNull(url) {"Url is required"},
+                checkNotNull(version) {"Version is required"},
+                checkNotNull(headers) {"Header is required"},
+                bodyPointer,
+                reference
+            )
+        } else {
+            createError(reference, decodeResult)
+        }
+
     }
 
 }

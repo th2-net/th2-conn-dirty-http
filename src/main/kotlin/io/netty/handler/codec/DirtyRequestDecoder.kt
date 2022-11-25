@@ -18,7 +18,6 @@
 package io.netty.handler.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodPointer
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
@@ -27,64 +26,69 @@ import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
 import com.exactpro.th2.http.client.dirty.handler.skipReaderIndex
 import io.netty.buffer.ByteBuf
-import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.HttpMethod
 import io.netty.handler.codec.http.HttpVersion
+import mu.KotlinLogging
 
-class DirtyRequestDecoder: ByteToMessageDecoder() {
+/**
+ * This codec required to use with full single message only
+ * If used as multiple decode processor, all messages after first one will fall into body data
+ * There no check of body length due current core realization
+ * Core always processes only one request message for each RawMessage
+ */
+class DirtyRequestDecoder: DirtyHttpDecoder<DirtyHttpRequest>() {
 
     private val startLineParser: StartLineParser = StartLineParser()
     private val headerParser: HeaderParser = HeaderParser()
 
-    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
-        if (msg is ByteBuf) {
-            val out = CodecOutputList.newInstance()
-            try {
-                callDecode(ctx, msg, out)
-            } catch (e: DecoderException) {
-                throw e
-            } catch (e: Exception) {
-                throw DecoderException(e)
-            } finally {
-                try {
-                    val size = out.size
-                    fireChannelRead(ctx, out, size)
-                } finally {
-                    out.recycle()
-                }
-            }
-        } else {
-            ctx.fireChannelRead(msg)
-        }
+    private var currentMessageBuilder: DirtyHttpRequest.Builder = DirtyHttpRequest.Builder()
+
+    override fun buildCurrentMessage(startPos: Int, endPos: Int, originalBuf: ByteBuf): DirtyHttpRequest {
+        return currentMessageBuilder.build(originalBuf)
     }
 
-    override fun decode(ctx: ChannelHandlerContext, msg: ByteBuf, out: MutableList<Any>) {
-        decodeSingle(msg)?.let {
-            out.add(it)
-        }
-    }
-
-    private fun decodeSingle(buffer: ByteBuf): DirtyHttpRequest? {
-        if (!startLineParser.parseLine(buffer)) return null
+    override fun parseStartLine(position: Int, buffer: ByteBuf): Boolean {
+        if (!startLineParser.parseLine(buffer)) return false
         val startLine = startLineParser.lineParts
-        startLineParser.reset()
-        if (startLine.size < 3) return null
+        if (startLine.size < 3) {
+            startLineParser.reset()
+            return false
+        }
 
-        val method = startLine[0].let { MethodPointer(it.second, HttpMethod.valueOf(it.first)) }
-        val url = startLine[1].let { StringPointer(it.second, it.first) }
-        val version = startLine[2].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) }
+        currentMessageBuilder.apply {
+            setMethod(startLine[0].let { MethodPointer(it.second, HttpMethod.valueOf(it.first)) })
+            setUrl(startLine[1].let { StringPointer(it.second, it.first) })
+            setVersion(startLine[2].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) })
+        }
+        return true
+    }
 
-        val startOfHeaders = buffer.readerIndex()
-        if (!headerParser.parseHeaders(buffer)) return null
+    override fun parseHeaders(position: Int, buffer: ByteBuf): Boolean {
+        if (!headerParser.parseHeaders(buffer)) return false
         val headers = headerParser.getHeaders()
-        headerParser.reset()
-        val endOfHeaders = buffer.readerIndex()
-        val reference = buffer.retain()
-        val headerContainer = HeadersPointer(startOfHeaders, endOfHeaders - startOfHeaders, reference, headers)
+        currentMessageBuilder.setHeaders(HeadersPointer(position, buffer.readerIndex() - position, buffer, headers))
+        return true
+    }
 
-        val body = BodyPointer(reference, buffer.readerIndex(), buffer.writerIndex() - buffer.readerIndex())
+    override fun parseBody(position: Int, buffer: ByteBuf): Boolean {
+        currentMessageBuilder.setBodyLength(buffer.writerIndex() - position)
+        currentMessageBuilder.setBodyPosition(position)
         buffer.skipReaderIndex()
+        return true
+    }
 
-        return DirtyHttpRequest(method, url, version, body, headerContainer, reference)
+    override fun onDecodeFailure(buffer: ByteBuf, e: Exception) {
+        currentMessageBuilder.setDecodeResult(DecoderResult.failure(e))
+        LOGGER.error(e) { "Error during response message parsing" }
+    }
+
+    override fun reset() {
+        startLineParser.reset()
+        headerParser.reset()
+        currentMessageBuilder = DirtyHttpRequest.Builder()
+    }
+
+    companion object {
+        private val LOGGER = KotlinLogging.logger { this::class.java.simpleName }
     }
 }
