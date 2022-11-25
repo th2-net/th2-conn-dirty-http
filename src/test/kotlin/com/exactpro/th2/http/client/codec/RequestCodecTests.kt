@@ -47,6 +47,23 @@ class RequestCodecTests {
         }
     }
 
+    @Test
+    fun `Request only with start line`() {
+        val requestString = """
+            POST /test/demo_form.php HTTP/1.1
+            
+            
+            """.trimIndent().replace("\n", "\r\n")
+        createCodec().decodeAsChannel(requestString, 0, 1) {
+            Assertions.assertEquals("POST", it.method.name())
+            Assertions.assertEquals("/test/demo_form.php", it.url)
+            Assertions.assertEquals("HTTP/1.1", it.version.text())
+            Assertions.assertTrue(it.body.toString(Charset.defaultCharset()).isEmpty())
+            Assertions.assertEquals(requestString, it.reference.readerIndex(0).toString(Charset.defaultCharset()))
+        }
+    }
+
+
     private fun DirtyRequestDecoder.decodeAsChannel(data: String, chunkSize: Int, expectCount: Int, messageAssertion: (DirtyHttpRequest) -> Unit) {
         val currentBuffer = Unpooled.buffer()
         var count = 0

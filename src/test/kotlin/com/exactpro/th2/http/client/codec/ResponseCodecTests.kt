@@ -32,6 +32,42 @@ class ResponseCodecTests {
     }
 
     @Test
+    fun `without body response decode`() {
+        val httpResponse = """
+            HTTP/1.1 200 OK
+            Host: w3schools.com
+            Content-Length: 0
+
+            
+            """.trimIndent()
+
+        createCodec().decodeAsChannel(httpResponse, 0, 1) {
+            Assertions.assertEquals(DecoderResult.SUCCESS, it.decoderResult)
+            Assertions.assertEquals(NettyHttpVersion.HTTP_1_1, it.version)
+            Assertions.assertEquals(200, it.code)
+            Assertions.assertEquals("OK", it.reason)
+            Assertions.assertEquals(httpResponse, it.reference.readerIndex(0).toString(Charset.defaultCharset()))
+        }
+    }
+
+    @Test
+    fun `start line only response decode`() {
+        val httpResponse = """
+            HTTP/1.1 200 OK
+
+            
+            """.trimIndent()
+
+        createCodec().decodeAsChannel(httpResponse, 0, 1) {
+            Assertions.assertEquals(DecoderResult.SUCCESS, it.decoderResult)
+            Assertions.assertEquals(NettyHttpVersion.HTTP_1_1, it.version)
+            Assertions.assertEquals(200, it.code)
+            Assertions.assertEquals("OK", it.reason)
+            Assertions.assertEquals(httpResponse, it.reference.readerIndex(0).toString(Charset.defaultCharset()))
+        }
+    }
+
+    @Test
     fun `partly response decode`() {
         val httpResponse = """
             HTTP/1.1 200 OK
