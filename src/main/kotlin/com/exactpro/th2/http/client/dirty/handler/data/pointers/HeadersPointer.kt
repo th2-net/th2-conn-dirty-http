@@ -22,7 +22,8 @@ import com.exactpro.th2.netty.bytebuf.util.remove
 import com.exactpro.th2.netty.bytebuf.util.replace
 import io.netty.buffer.ByteBuf
 
-class HeadersPointer(position: Int, length: Int  , private val reference: ByteBuf, private val details: MutableMap<String, HttpHeaderDetails>): Pointer(position), MutableMap<String, String> {
+
+class HeadersPointer(position: Int, length: Int, private val reference: ByteBuf, private val details: MutableMap<String, HttpHeaderDetails>): Pointer(position), MutableMap<String, String> {
 
     var length: Int = length
         private set
@@ -104,12 +105,15 @@ class HeadersPointer(position: Int, length: Int  , private val reference: ByteBu
 
     override val size: Int
         get() = details.size
+    //TODO: Simplify entries and values
     override val entries: MutableSet<MutableMap.MutableEntry<String, String>>
-        get() = error("Unsupported kind of operation")
+        get() = mutableMapOf<String, String>().also { map ->
+            map.putAll(details.map { it.key to get(it.key)!! })
+        }.entries.toMutableSet()
     override val keys: MutableSet<String>
         get() = details.keys
     override val values: MutableCollection<String>
-        get() = error("Unsupported kind of operation")
+        get() = details.map { get(it.key)!! }.toMutableList()
 
     data class HttpHeaderDetails(var start: Int, var end: Int, var value: String)
 }

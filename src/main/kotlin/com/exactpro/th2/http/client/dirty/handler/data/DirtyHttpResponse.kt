@@ -61,16 +61,16 @@ class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPo
     }
 
     override fun toString(): String = buildString {
+        appendLine("=================")
         appendLine("${version.text()} $code $reason")
         headers.forEach {
             appendLine("${it.key}: ${it.value}")
         }
         appendLine()
         appendLine(body.toString(Charset.defaultCharset()))
-
-        appendLine()
-        appendLine("RAW:")
+        appendLine("================= FROM BUFFER:")
         appendLine(reference.readerIndex(0).toString(Charset.defaultCharset()))
+        appendLine("=================")
     }
 
     class Builder: HttpBuilder() {

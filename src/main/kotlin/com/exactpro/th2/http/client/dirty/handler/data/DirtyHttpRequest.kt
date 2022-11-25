@@ -67,16 +67,16 @@ class DirtyHttpRequest(private val httpMethod: MethodPointer, private val httpUr
     }
 
     override fun toString(): String = buildString {
+        appendLine("=================")
         appendLine("${method.name()} $url ${version.text()}")
         headers.forEach {
             appendLine("${it.key}: ${it.value}")
         }
         appendLine()
         appendLine(body.toString(Charset.defaultCharset()))
-
-        appendLine()
-        appendLine("RAW:")
+        appendLine("================= FROM BUFFER:")
         appendLine(reference.readerIndex(0).toString(Charset.defaultCharset()))
+        appendLine("=================")
     }
 
     class Builder: HttpBuilder() {
