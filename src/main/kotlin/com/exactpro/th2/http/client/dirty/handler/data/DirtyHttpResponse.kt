@@ -86,7 +86,7 @@ class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPo
             private set
         var bodyPosition: Int? = null
             private set
-        var bodyLength: Int? = null
+        var bodyLength: Int = 0
             private set
 
         override fun setDecodeResult(result: DecoderResult) {
@@ -121,8 +121,7 @@ class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPo
 
         override fun build(reference: ByteBuf): DirtyHttpResponse = if (decodeResult.isSuccess) {
             checkNotNull(bodyPosition) {"Body is required"}
-            checkNotNull(bodyLength) {"Body is required"}
-            val bodyPointer = if (bodyLength == 0) BodyPointer.Empty(reference, bodyPosition!!) else BodyPointer(reference, bodyPosition!!, bodyLength!!)
+            val bodyPointer = if (bodyLength == 0) BodyPointer.Empty(reference, bodyPosition!!) else BodyPointer(reference, bodyPosition!!, bodyLength)
             DirtyHttpResponse(
                 checkNotNull(version) {"Version is required"},
                 checkNotNull(code) {"Code is required"},

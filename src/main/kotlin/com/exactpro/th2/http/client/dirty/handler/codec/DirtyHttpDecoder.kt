@@ -8,7 +8,7 @@ abstract class DirtyHttpDecoder<T: DirtyHttpMessage> {
     private var currentPosition = 0
     private var startOfMessage = 0
 
-    fun decode(input: ByteBuf): T? {
+    open fun decode(input: ByteBuf): T? {
         if (currentState != State.READ_INITIAL) shrinkIfRequired(input) // Need to check if data was discarded
         return if (decodeSingle(input)) {
             buildCurrentMessage(startOfMessage, currentPosition, input).also {

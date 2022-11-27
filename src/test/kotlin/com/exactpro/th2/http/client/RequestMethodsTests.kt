@@ -158,8 +158,7 @@ class RequestMethodsTests: ServerIncluded() {
         }
     }
 
-    //@Test
-    //FIXME
+    @Test
     fun `HEAD response test`() = simpleTest(serverPort,false, true) { port ->
         mutableListOf<RawHttpRequest>().apply {
             repeat(`test request count`) {

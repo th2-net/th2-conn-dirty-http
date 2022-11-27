@@ -112,18 +112,10 @@ fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = wi
                     else -> ServerIncluded.createResponse()
                 }
                 Assertions.assertEquals(originalResponse, state.rawResponses.first())
-//                Assertions.assertEquals(if (withBody) ServerIncluded.responseContentLength else 0, resultResponse.content().writerIndex()) // --> released after use
             }
             state.requests.first().also { resultRequest ->
                 Assertions.assertEquals(request.method, resultRequest.method.name())
                 Assertions.assertEquals(/*http://localhost:${client.address.port}*/"/test", resultRequest.url)
-                // Buffer is freed
-//                request.headers.forEach { name, values ->
-//                    Assertions.assertEquals(values, resultRequest.headers[name]) {name}
-//                }
-//                if (request.body.isPresent) {
-//                    Assertions.assertEquals(request.body.get().decodeBody().size, resultRequest.content().writerIndex())
-//                }
             }
             if (request.headers.getFirst("Connection").orElse("") == "close") {
                 Assertions.assertTrue(!client.isOpen)

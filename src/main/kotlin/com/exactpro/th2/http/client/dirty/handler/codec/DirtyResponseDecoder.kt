@@ -20,6 +20,18 @@ class DirtyResponseDecoder: DirtyHttpDecoder<DirtyHttpResponse>() {
 
     private var currentMessageBuilder: DirtyHttpResponse.Builder = DirtyHttpResponse.Builder()
 
+    private var headMode: Boolean = false
+
+    override fun decode(input: ByteBuf): DirtyHttpResponse? {
+        headMode = false
+        return super.decode(input)
+    }
+
+    fun decodeHead(input: ByteBuf): DirtyHttpResponse? {
+        headMode = true
+        return super.decode(input)
+    }
+
     override fun buildCurrentMessage(startPos: Int, endPos: Int, originalBuf: ByteBuf): DirtyHttpResponse {
         return currentMessageBuilder.build(originalBuf.copy(startPos, endPos-startPos))
     }
@@ -52,21 +64,23 @@ class DirtyResponseDecoder: DirtyHttpDecoder<DirtyHttpResponse>() {
     }
 
     override fun parseBody(position: Int, buffer: ByteBuf): Boolean {
-        val headers = checkNotNull(currentMessageBuilder.headers)
         var endOfTheBody = position
 
-        when {
-            headers.contains("Content-Length") -> headers["Content-Length"]!!.toInt().let { contentLengthInt ->
-                if (contentLengthInt != 0 ) {
-                    if (buffer.writerIndex() < position + contentLengthInt) return false
-                    endOfTheBody = position + contentLengthInt
+        if (!headMode) {
+            val headers = checkNotNull(currentMessageBuilder.headers)
+            when {
+                headers.contains("Content-Length") -> headers["Content-Length"]!!.toInt().let { contentLengthInt ->
+                    if (contentLengthInt != 0 ) {
+                        if (buffer.writerIndex() < position + contentLengthInt) return false
+                        endOfTheBody = position + contentLengthInt
+                    }
                 }
-            }
-            headers["Transfer-Encoding"]?.contains("chunked") == true -> {
-                val indexOfEndPattern = buffer.indexOf("0\r\n\r\n")
-                when {
-                    indexOfEndPattern < 0 -> return false
-                    else -> endOfTheBody = indexOfEndPattern+5
+                headers["Transfer-Encoding"]?.contains("chunked") == true -> {
+                    val indexOfEndPattern = buffer.indexOf("0\r\n\r\n")
+                    when {
+                        indexOfEndPattern < 0 -> return false
+                        else -> endOfTheBody = indexOfEndPattern+5
+                    }
                 }
             }
         }

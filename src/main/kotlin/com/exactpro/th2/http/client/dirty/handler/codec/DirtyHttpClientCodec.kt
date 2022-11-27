@@ -20,6 +20,9 @@ import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.http.HttpClientCodec
+import io.netty.handler.codec.http.HttpMethod
+import java.util.Queue
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
  * @see HttpClientCodec
@@ -28,12 +31,18 @@ class DirtyHttpClientCodec {
     private val requestDecoder = DirtyRequestDecoder()
     private val responseDecoder = DirtyResponseDecoder()
 
+    private val methods : Queue<HttpMethod> = ConcurrentLinkedQueue()
 
-    fun onRequest(msg: ByteBuf): DirtyHttpRequest? {
-        return requestDecoder.decode(msg)
+    fun onRequest(msg: ByteBuf): DirtyHttpRequest? = requestDecoder.decode(msg)?.also {
+        methods.offer(it.method)
     }
 
-    fun onResponse(msg: ByteBuf): DirtyHttpResponse? {
-        return responseDecoder.decode(msg)
+    fun onResponse(msg: ByteBuf): DirtyHttpResponse? = when(methods.poll()) {
+        HttpMethod.HEAD -> responseDecoder.decodeHead(msg)
+        else -> responseDecoder.decode(msg)
+    }
+
+    fun reset() {
+        methods.clear()
     }
 }

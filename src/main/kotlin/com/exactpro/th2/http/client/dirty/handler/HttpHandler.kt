@@ -29,7 +29,6 @@ import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
 import com.exactpro.th2.http.client.dirty.handler.stateapi.IState
 import com.google.auto.service.AutoService
 import io.netty.buffer.ByteBuf
-import io.netty.handler.codec.http.HttpMethod
 import mu.KotlinLogging
 import org.apache.commons.lang3.exception.ExceptionUtils
 import java.net.InetSocketAddress
@@ -49,7 +48,6 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
     private val httpClientCodec = DirtyHttpClientCodec()
 
     private val httpMode = AtomicReference(HttpMode.DEFAULT)
-    private val lastMethod = AtomicReference<HttpMethod?>(null)
 
     private var isLastResponse = AtomicBoolean(false)
     private val dialogueQueue: Queue<Pair<Map<String, String>, (DirtyHttpResponse) -> Unit>> = ConcurrentLinkedQueue()
@@ -61,33 +59,27 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
     override fun onStart() {
         isLastResponse.set(false)
         httpMode.set(HttpMode.DEFAULT)
-        lastMethod.set(null)
         channel = context.createChannel(address, settings.security, mapOf(), false, 0L, Integer.MAX_VALUE)
         channel.open()
     }
 
     override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>) {
         try {
-            when (val mode = httpMode.get()) {
-                HttpMode.DEFAULT -> checkNotNull(httpClientCodec.onRequest(message.retain())) {"Failed to decode request"}.let { request ->
-                    isLastResponse.set(!request.isKeepAlive())
-                    settings.defaultHeaders.forEach {
-                        if (!request.headers.contains(it.key)){
-                            request.headers[it.key] = it.value.joinToString(", ")
-                        }
+            checkNotNull(httpClientCodec.onRequest(message.retain())) {"Failed to decode request"}.let { request ->
+                isLastResponse.set(!request.isKeepAlive())
+                settings.defaultHeaders.forEach {
+                    if (!request.headers.contains(it.key)){
+                        request.headers[it.key] = it.value.joinToString(", ")
                     }
-                    if (!request.headers.contains(HOST)){
-                        request.headers[HOST] = hostValue
-                    }
-                    lastMethod.set(request.method)
-                    state.onRequest(channel, request)
-                    LOGGER.debug { "Sending request: $request" }
-                    dialogueQueue.offer (metadata to { response: DirtyHttpResponse ->
-                        state.onResponse(channel, response, request)
-                    })
                 }
-                HttpMode.CONNECT -> LOGGER.trace { "$mode: Sending data passing as tcp package" }
-                else -> error("Unsupported http mode: $mode")
+                if (!request.headers.contains(HOST)){
+                    request.headers[HOST] = hostValue
+                }
+                state.onRequest(channel, request)
+                LOGGER.debug { "Sending request: $request" }
+                dialogueQueue.offer (metadata to { response: DirtyHttpResponse ->
+                    state.onResponse(channel, response, request)
+                })
             }
         } catch (e: Exception) {
             LOGGER.error(e) { "Cannot handle request" }
@@ -97,35 +89,23 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
     }
 
     override fun onIncoming(channel: IChannel, message: ByteBuf): Map<String, String> {
-        when (val mode = httpMode.get()) {
-            HttpMode.DEFAULT -> {
-                val response = checkNotNull(responseOutputQueue.poll()) {"OnIncoming processing with empty decode queue"}
-                val dialogue = checkNotNull(dialogueQueue.poll()) {"Response must be received exactly for each request, there no response handlers in dialogue queue"}
+        val response = checkNotNull(responseOutputQueue.poll()) {"OnIncoming processing with empty decode queue"}
+        val dialogue = checkNotNull(dialogueQueue.poll()) {"Response must be received exactly for each request, there no response handlers in dialogue queue"}
 
-                if (response.decoderResult.isFailure) {
-                    throw response.decoderResult.cause()
-                }
-                LOGGER.debug { "Received response: $response" }
-                when {
-                    isLastResponse.get() || response.code >= 400 -> context.destroyChannel(channel)
-                    response.isKeepAlive() -> Unit
-                    else -> context.destroyChannel(channel) // all else are closing cases
-                }
-
-                when(lastMethod.get()) {
-                    HttpMethod.CONNECT -> if (response.code == 200) httpMode.set(HttpMode.CONNECT)
-                }
-
-                return dialogue.let { (metadata, processor) ->
-                    processor.invoke(response)
-                    metadata
-                }
-            }
-            HttpMode.CONNECT -> LOGGER.trace { "$mode: Received data passing as tcp package" }
-            else -> error("Unsupported http mode: $mode")
+        if (response.decoderResult.isFailure) {
+            throw response.decoderResult.cause()
+        }
+        LOGGER.debug { "Received response: $response" }
+        when {
+            isLastResponse.get() || response.code >= 400 -> context.destroyChannel(channel)
+            response.isKeepAlive() -> Unit
+            else -> context.destroyChannel(channel) // all else are closing cases
         }
 
-        return emptyMap()
+        return dialogue.let { (metadata, processor) ->
+            processor.invoke(response)
+            metadata
+        }
     }
 
     override fun onReceive(channel: IChannel, buffer: ByteBuf): ByteBuf? {
@@ -159,7 +139,8 @@ open class HttpHandler(private val context: IHandlerContext, private val state: 
         dialogueQueue.clear()
         responseOutputQueue.clear()
         state.onClose()
-        if (isLastResponse.get() || lastMethod.get() == HttpMethod.CONNECT) {
+        httpClientCodec.reset()
+        if (isLastResponse.get()) {
             LOGGER.debug { "Closing channel due last request/response" }
         }
     }
