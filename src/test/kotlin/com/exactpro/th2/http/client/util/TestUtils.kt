@@ -1,0 +1,194 @@
+/*
+ * Copyright 2022-2022 Exactpro (Exactpro Systems Limited)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.exactpro.th2.http.client.util
+
+import com.exactpro.th2.common.grpc.EventID
+import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
+import com.exactpro.th2.conn.dirty.tcp.core.api.impl.Channel
+import com.exactpro.th2.conn.dirty.tcp.core.api.impl.DummyManglerFactory
+import com.exactpro.th2.http.client.dirty.handler.HttpHandler
+import com.exactpro.th2.http.client.dirty.handler.HttpHandlerSettings
+import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
+import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
+import com.exactpro.th2.http.client.dirty.handler.stateapi.IState
+import io.netty.buffer.Unpooled
+import io.netty.channel.nio.NioEventLoopGroup
+import mu.KotlinLogging
+import org.junit.jupiter.api.Assertions
+import rawhttp.core.RawHttpRequest
+import java.net.InetSocketAddress
+import java.nio.charset.Charset
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+
+private val LOGGER = KotlinLogging.logger { }
+
+fun IChannel.send(request: RawHttpRequest, metadata: MutableMap<String, String>) = this.send(Unpooled.buffer().writeBytes(request.toString().toByteArray()), metadata, EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
+
+fun waitUntil(timeout: Long, step: Long = 100, check: () -> Boolean) {
+    LOGGER.info {"Start waiting for positive check"}
+    var fullTime = 0L
+    while (!check() && timeout > fullTime) {
+        fullTime+=step
+        Thread.sleep(step)
+    }
+}
+
+fun simpleTestSingle(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = withBody, keepAlive: Boolean = false, getRequest: (Int) -> RawHttpRequest) {
+    simpleTest(port, withBody, withBodyHeader, keepAlive) { listOf(getRequest(it)) }
+}
+
+fun simpleTest(port: Int, withBody: Boolean = true, withBodyHeader: Boolean = withBody, keepAlive: Boolean = false, getRequests: (Int) -> List<RawHttpRequest>) {
+    val defaultHeaders = mapOf("Accept-Encoding" to listOf("gzip", "deflate"))
+    val testContext = TestContext(HttpHandlerSettings().apply {
+        this.defaultHeaders = defaultHeaders
+    })
+
+    val state = object : IState {
+        override val isReady: Boolean = true
+        val requests = mutableListOf<DirtyHttpRequest>()
+        val responses = mutableListOf<DirtyHttpResponse>()
+        val rawResponses = mutableListOf<String>()
+
+        override fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) {
+            responses.add(response)
+            rawResponses.add(response.reference.readerIndex(0).toString(Charset.defaultCharset()))
+        }
+
+        override fun onRequest(channel: IChannel, request: DirtyHttpRequest) {
+            requests.add(request)
+        }
+
+    }
+
+    val client = createClient(HttpHandler(testContext, state, testContext.settings as HttpHandlerSettings), 10, port)
+    if (!client.isOpen) client.open()
+    waitUntil(2000, 250, client::isOpen)
+
+    val requests = getRequests(port)
+    try {
+        requests.forEachIndexed { index, request ->
+            if (!client.isOpen) {
+                Assertions.assertTrue(!keepAlive) {"Connection must be continuous, was broken before ${index+1}th request"}
+                client.open()
+                waitUntil(2000, 250, client::isOpen)
+            }
+
+            client.send(Unpooled.buffer().writeBytes(request.toString().toByteArray()), mutableMapOf(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
+
+            waitUntil(2500) {
+                state.responses.isNotEmpty()
+            }
+            Assertions.assertEquals(1, state.requests.size)
+            Assertions.assertEquals(1, state.responses.size)
+            LOGGER.info { "Request ${request.method} sent and got response" }
+            state.responses.first().also { resultResponse ->
+                Assertions.assertEquals(200, resultResponse.code)
+                Assertions.assertEquals("OK", resultResponse.reason)
+                if (withBodyHeader) {
+                    Assertions.assertEquals("plain/text", resultResponse.headers["Content-Type"])
+                    Assertions.assertEquals(if (withBody) ServerIncluded.responseContentLength.toString() else "0", resultResponse.headers["Content-Length"])
+                } else {
+                    Assertions.assertEquals(null, resultResponse.headers["Content-Type"])
+                    Assertions.assertEquals("0", resultResponse.headers["Content-Length"])
+                }
+                val originalResponse = when(request.method) {
+                    "HEAD" -> ServerIncluded.createResponse(false, true)
+                    "CONNECT" -> ServerIncluded.createResponse(false, false)
+                    else -> ServerIncluded.createResponse()
+                }
+                Assertions.assertEquals(originalResponse, state.rawResponses.first())
+            }
+            state.requests.first().also { resultRequest ->
+                Assertions.assertEquals(request.method, resultRequest.method.name())
+                Assertions.assertEquals(/*http://localhost:${client.address.port}*/"/test", resultRequest.url)
+            }
+            if (request.headers.getFirst("Connection").orElse("") == "close") {
+                Assertions.assertTrue(!client.isOpen)
+            }
+
+            state.requests.clear()
+            state.responses.clear()
+            state.rawResponses.clear()
+
+            LOGGER.debug { "TEST [${request.method}] [${index + 1}]: PASSED" }
+        }
+    } finally {
+        client.close()
+    }
+}
+
+fun stressTest(times: Int, port: Int, getRequest: (Int) -> RawHttpRequest) {
+    val testContext = TestContext(HttpHandlerSettings().apply {
+        this.defaultHeaders = mapOf()
+    })
+
+    val state = object : IState {
+        override val isReady: Boolean = true
+        val requests = AtomicInteger(0)
+        val responses = AtomicInteger(0)
+        override fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) { responses.incrementAndGet() }
+        override fun onRequest(channel: IChannel, request: DirtyHttpRequest) { requests.incrementAndGet() }
+    }
+
+    val client = createClient(HttpHandler(testContext, state, testContext.settings as HttpHandlerSettings), 10, port)
+    if (!client.isOpen) client.open()
+    waitUntil(5000) {
+        client.isOpen
+    }
+
+    var sentRequests = 0
+    try {
+        repeat(times) {
+            if (!client.isOpen) client.open()
+            client.send(Unpooled.buffer().writeBytes(getRequest(port).toString().toByteArray()), mutableMapOf(), EventID.getDefaultInstance(), IChannel.SendMode.HANDLE)
+            sentRequests++
+        }
+
+        waitUntil(10000) {
+            state.responses.get() == times
+        }
+
+        LOGGER.info { "$times requests was sent" }
+
+        Assertions.assertEquals(times, state.requests.get()) {"Requests count must be exactly: $times; Response count: ${state.responses.get()}"}
+        Assertions.assertEquals(state.requests.get(), state.responses.get()) {"Requests and response count must be same: (req) ${state.requests.get()} != ${state.responses.get()} (res)"}
+    } finally {
+        client.close()
+        LOGGER.info { "Sent $sentRequests requests, received: ${state.responses.get()} responses" }
+    }
+
+}
+
+fun createClient(handler: HttpHandler, corePoolSize: Int, serverPort: Int, autoReconnect: Boolean = false): IChannel = Channel(
+    InetSocketAddress("localhost", serverPort),
+    IChannel.Security(),
+    mapOf(),
+    "group",
+    "alias",
+    autoReconnect,
+    5000,
+    1000,
+    false,
+    handler,
+    DummyManglerFactory.DummyMangler,
+    onEvent = {},
+    onMessage = { },
+    Executors.newScheduledThreadPool(corePoolSize),
+    NioEventLoopGroup(corePoolSize, Executors.newScheduledThreadPool(corePoolSize)),
+    EventID.getDefaultInstance()
+)
