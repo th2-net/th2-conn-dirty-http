@@ -1,16 +1,14 @@
 package com.exactpro.th2.http.client.dirty.handler.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.IntPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HTTPVersionFragment
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.TextFragment
 import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
 import com.exactpro.th2.netty.bytebuf.util.indexOf
 import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.DecoderResult
-import io.netty.handler.codec.http.HttpVersion
 import mu.KotlinLogging
 
 class DirtyResponseDecoder: DirtyHttpDecoder<DirtyHttpResponse>() {
@@ -45,21 +43,25 @@ class DirtyResponseDecoder: DirtyHttpDecoder<DirtyHttpResponse>() {
             return false
         }
         currentMessageBuilder.apply {
-            setVersion(parts[0].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) })
-            setCode(parts[1].let { IntPointer(it.second, it.first.toInt()) })
-            setReason( parts[2].let { StringPointer(it.second, it.first) })
+            setVersion(parts[0].let { HTTPVersionFragment(it.second, it.first.length, buffer) })
+            setCode(parts[1].let { TextFragment(it.second, it.first.length, buffer) }.also {
+                it.previous = version
+            })
+            setReason(parts[2].let { TextFragment(it.second, it.first.length, buffer) }.also {
+                it.previous = code
+            })
         }
         return true
     }
 
     override fun parseHeaders(position: Int, buffer: ByteBuf): Boolean {
-        if (!headerParser.parseHeaders(buffer)) {
+        if (!headerParser.parseHeaders(buffer, currentMessageBuilder.reason)) {
             headerParser.reset()
             return false
         }
         val headers = headerParser.getHeaders()
         // FIXME: Need to change buffer param to something else, this buffer will be discarded due decode process
-        currentMessageBuilder.setHeaders(HeadersPointer(position, buffer.readerIndex() - position, buffer, headers))
+        currentMessageBuilder.setHeaders(HeaderFragments(headers))
         return true
     }
 
@@ -69,7 +71,7 @@ class DirtyResponseDecoder: DirtyHttpDecoder<DirtyHttpResponse>() {
         if (!headMode) {
             val headers = checkNotNull(currentMessageBuilder.headers)
             when {
-                headers.contains("Content-Length") -> headers["Content-Length"]!!.toInt().let { contentLengthInt ->
+                headers.containsKey("Content-Length") -> headers["Content-Length"]!!.toInt().let { contentLengthInt ->
                     if (contentLengthInt != 0 ) {
                         if (buffer.writerIndex() < position + contentLengthInt) return false
                         endOfTheBody = position + contentLengthInt
@@ -85,10 +87,12 @@ class DirtyResponseDecoder: DirtyHttpDecoder<DirtyHttpResponse>() {
             }
         }
 
-        currentMessageBuilder.apply {
-            setBodyPosition(position)
-            setBodyLength(endOfTheBody-position)
-        }
+        currentMessageBuilder.setBody(TextFragment(position, endOfTheBody-position, buffer).also {
+            val lastHeader: HeaderFragments.HeaderLine? = null
+            currentMessageBuilder.headers!!.headers.forEach {
+                lastHeader?.remove()
+            }
+        })
         buffer.readerIndex(endOfTheBody)
         return true
     }

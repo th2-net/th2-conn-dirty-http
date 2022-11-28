@@ -73,7 +73,7 @@ class ParserTests {
         """.trimIndent()
         var buffer = Unpooled.buffer().writeBytes(stringHeaders.toByteArray())
 
-        Assertions.assertFalse(parser.parseHeaders(buffer))
+        Assertions.assertFalse(parser.parseHeaders(buffer, ))
         buffer.release()
         stringHeaders = """
             HEADER_NAME2: HEADER_VALUE2
@@ -81,7 +81,7 @@ class ParserTests {
             
         """.trimIndent()
         buffer = Unpooled.buffer().writeBytes(stringHeaders.toByteArray())
-        Assertions.assertTrue(parser.parseHeaders(buffer))
+        Assertions.assertTrue(parser.parseHeaders(buffer, ))
 
         parser.getHeaders().let {
             Assertions.assertEquals(3, it.size)
@@ -96,7 +96,7 @@ class ParserTests {
         val headersString = headers.toList().joinToString(separator) {"${it.first}: ${it.second}"}
         val data = "$headersString$separator$separator$body"
         val buffer = Unpooled.buffer().writeBytes(data.toByteArray())
-        check(parseHeaders(buffer)) {"Headers must have empty line"}
+        check(parseHeaders(buffer, )) {"Headers must have empty line"}
 
         val headersPositions = getHeaders()
         this.reset()

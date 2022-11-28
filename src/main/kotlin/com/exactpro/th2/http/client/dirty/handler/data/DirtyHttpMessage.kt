@@ -17,55 +17,18 @@
 
 package com.exactpro.th2.http.client.dirty.handler.data
 
-import com.exactpro.th2.netty.bytebuf.util.replace
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.Pointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HTTPVersionFragment
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.TextFragment
 import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.DecoderResult
 
 typealias NettyHttpMethod = io.netty.handler.codec.http.HttpMethod
 typealias NettyHttpVersion = io.netty.handler.codec.http.HttpVersion
 
-abstract class DirtyHttpMessage(protected val httpVersion: VersionPointer, val headers: HeadersPointer, private val httpBody: BodyPointer, val reference: ByteBuf, val decoderResult: DecoderResult = DecoderResult.SUCCESS) {
-
-    var body: ByteBuf
-        get() = httpBody.reference.readerIndex(httpBody.position)
-        set(value) {
-            this.httpBody.reference.writerIndex(this.httpBody.position).writeBytes(value)
-        }
-
-    var version: NettyHttpVersion
-        get() = httpVersion.value
-        set(value) = this.httpVersion.let {
-            reference.replace(it.position, reference.writerIndex(), value.text())
-            it.value = value
-            settle()
-        }
-
-    protected open fun settle(startSum: Int = 0): Int {
-        var sum = startSum
-        if (headers.isModified() || sum > 0) {
-            sum = headers.settleSingle(sum)
-        }
-        if (httpBody.isModified() || sum > 0) {
-            sum = httpBody.settleSingle(sum)
-        }
-        return sum
-    }
-
+abstract class DirtyHttpMessage(val httpVersion: HTTPVersionFragment, val headers: HeaderFragments, val httpBody: TextFragment, val decoderResult: DecoderResult = DecoderResult.SUCCESS) {
     abstract class HttpBuilder {
         abstract fun build(reference: ByteBuf): DirtyHttpMessage
         abstract fun setDecodeResult(result: DecoderResult)
-    }
-
-    companion object {
-        fun Pointer.settleSingle(amount: Int): Int {
-            move(amount)
-            return (expansion + amount).also {
-                settle()
-            }
-        }
     }
 }

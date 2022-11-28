@@ -18,7 +18,7 @@ package com.exactpro.th2.http.client
 
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodPointer
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
 import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
@@ -53,9 +53,9 @@ class StateTests {
         val headerParser = HeaderParser()
         val lineParser = StartLineParser()
         check(lineParser.parseLine(buffer))
-        check(headerParser.parseHeaders(buffer))
+        check(headerParser.parseHeaders(buffer, ))
         val headers = headerParser.getHeaders()
-        val container = HeadersPointer(requestString.indexOf("\n")+1, 17 + 17 + 19 + 3, Unpooled.buffer().writeBytes(requestString.toByteArray()), headers)
+        val container = HeaderFragments(requestString.indexOf("\n")+1, 17 + 17 + 19 + 3, Unpooled.buffer().writeBytes(requestString.toByteArray()), headers)
 
         val user = "test_user"
         val password = "test_password"

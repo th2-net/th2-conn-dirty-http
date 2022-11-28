@@ -17,7 +17,8 @@
 
 package com.exactpro.th2.http.client.dirty.handler.parsers
 
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer.HttpHeaderDetails
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.Fragment
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
 import com.exactpro.th2.http.client.dirty.handler.resetMarkReaderIndex
 import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.http.HttpConstants
@@ -28,11 +29,13 @@ class HeaderParser: LineParser {
     private var startOfHeadersIndex: Int? = null
     private val nameBuilder = AppendableCharSequence(DEFAULT_INITIAL_BUFFER_SIZE)
     private val valueBuilder = AppendableCharSequence(DEFAULT_INITIAL_BUFFER_SIZE)
-    private val result = mutableMapOf<String, HttpHeaderDetails>()
+    private var lastFragment: Fragment<*>? = null
+    private val result = mutableMapOf<String, HeaderFragments.HeaderLine>()
 
     fun getHeaders() = result.toMutableMap()
 
-    fun parseHeaders(buffer: ByteBuf): Boolean {
+    fun parseHeaders(buffer: ByteBuf, previousFragment: Fragment<*>? = null): Boolean {
+        lastFragment = previousFragment
         if (startOfHeadersIndex == null) startOfHeadersIndex = buffer.readerIndex()
         while (true) {
             valueStarted = false
@@ -44,13 +47,15 @@ class HeaderParser: LineParser {
 
             nameBuilder.removeCR()
             if(nameBuilder.isEmpty()) {
-//                buffer.resetReaderIndex()
                 buffer.resetMarkReaderIndex()
                 return true
             }
             valueBuilder.removeCR()
 
-            result[nameBuilder.toString()] = HttpHeaderDetails(startIndex, buffer.readerIndex(), valueBuilder.toString())
+            result[nameBuilder.toString()] = HeaderFragments.HeaderLine(startIndex, buffer.readerIndex(), buffer).also {
+                it.previous = lastFragment
+                lastFragment = it
+            }
             resetBuilders()
         }
         return false

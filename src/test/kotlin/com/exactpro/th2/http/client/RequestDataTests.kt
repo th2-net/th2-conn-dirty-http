@@ -1,6 +1,6 @@
 package com.exactpro.th2.http.client
 
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
 import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
 import io.netty.buffer.Unpooled
@@ -27,10 +27,10 @@ class RequestDataTests {
         lineParser.parseLine(buffer)
         lineParser.reset()
         val startOfHeader = buffer.readerIndex()
-        check(headerParser.parseHeaders(buffer))
+        check(headerParser.parseHeaders(buffer, ))
         val headers = headerParser.getHeaders()
         headerParser.reset()
-        val resultHeaders = HeadersPointer(startOfHeader, buffer.readerIndex()-startOfHeader, buffer, headers)
+        val resultHeaders = HeaderFragments(startOfHeader, buffer.readerIndex() - startOfHeader, buffer, headers)
 
         Assertions.assertEquals("Something", resultHeaders["Accept"])
         Assertions.assertEquals("close", resultHeaders["Connection"])

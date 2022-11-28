@@ -1,10 +1,10 @@
 package com.exactpro.th2.http.client.dirty.handler.codec
 
 import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HTTPVersionFragment
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodFragment
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.TextFragment
 import com.exactpro.th2.http.client.dirty.handler.parsers.HeaderParser
 import com.exactpro.th2.http.client.dirty.handler.parsers.StartLineParser
 import com.exactpro.th2.http.client.dirty.handler.skipReaderIndex
@@ -40,23 +40,26 @@ class DirtyRequestDecoder: DirtyHttpDecoder<DirtyHttpRequest>() {
         }
 
         currentMessageBuilder.apply {
-            setMethod(startLine[0].let { MethodPointer(it.second, HttpMethod.valueOf(it.first)) })
-            setUrl(startLine[1].let { StringPointer(it.second, it.first) })
-            setVersion(startLine[2].let { VersionPointer(it.second, HttpVersion.valueOf(it.first)) })
+            setMethod(startLine[0].let { MethodFragment(it.second, it.first.length, buffer) })
+            setUrl(startLine[1].let { TextFragment(it.second, it.first.length, buffer) }.also {
+                it.previous = method
+            })
+            setVersion(startLine[2].let { HTTPVersionFragment(it.second, it.first.length, buffer) }.also {
+                it.previous = url
+            })
         }
         return true
     }
 
     override fun parseHeaders(position: Int, buffer: ByteBuf): Boolean {
-        if (!headerParser.parseHeaders(buffer)) return false
+        if (!headerParser.parseHeaders(buffer, )) return false
         val headers = headerParser.getHeaders()
-        currentMessageBuilder.setHeaders(HeadersPointer(position, buffer.readerIndex() - position, buffer, headers))
+        currentMessageBuilder.setHeaders(HeaderFragments(headers))
         return true
     }
 
     override fun parseBody(position: Int, buffer: ByteBuf): Boolean {
-        currentMessageBuilder.setBodyLength(buffer.writerIndex() - position)
-        currentMessageBuilder.setBodyPosition(position)
+        currentMessageBuilder.setBody(TextFragment(position, buffer.writerIndex() - position, buffer))
         buffer.skipReaderIndex()
         return true
     }

@@ -17,125 +17,72 @@
 
 package com.exactpro.th2.http.client.dirty.handler.data
 
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
-import com.exactpro.th2.http.client.dirty.handler.skipReaderIndex
-import com.exactpro.th2.netty.bytebuf.util.replace
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HTTPVersionFragment
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.MethodFragment
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.TextFragment
 import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.DecoderResult
-import io.netty.handler.codec.http.HttpMethod
-import io.netty.handler.codec.http.HttpVersion
 import java.nio.charset.Charset
 
-class DirtyHttpRequest(private val httpMethod: MethodPointer, private val httpUrl: StringPointer, httpVersion: VersionPointer, headers: HeadersPointer, httpBody: BodyPointer, reference: ByteBuf, decoderResult: DecoderResult = DecoderResult.SUCCESS): DirtyHttpMessage(httpVersion, headers, httpBody, reference, decoderResult) {
-
-    var method: NettyHttpMethod
-        get() = httpMethod.value
-        set(value) = this.httpMethod.let {
-            reference.replace(it.position, reference.writerIndex(), value.name())
-            it.value = value
-            settle()
-        }
-
-    var url: String
-        get() = httpUrl.value
-        set(value) = this.httpUrl.let {
-            reference.readerIndex(it.position)
-            reference.replace(it.position, it.position + it.value.length, value)
-            reference.skipReaderIndex()
-            it.value = value
-            settle()
-        }
-
-    override fun settle(startSum: Int): Int {
-        var sum = startSum
-        if (httpMethod.isModified()) {
-            sum += httpMethod.expansion
-            httpMethod.settle()
-        }
-        if (httpUrl.isModified() || sum > 0) {
-            sum = httpUrl.settleSingle(sum)
-        }
-        if (httpVersion.isModified() || sum > 0) {
-            sum = httpVersion.settleSingle(sum)
-        }
-
-        return super.settle(sum)
-    }
+class DirtyHttpRequest(val httpMethod: MethodFragment, val httpUrl: TextFragment, httpVersion: HTTPVersionFragment, headers: HeaderFragments, httpBody: TextFragment, decoderResult: DecoderResult = DecoderResult.SUCCESS): DirtyHttpMessage(httpVersion, headers, httpBody, decoderResult) {
 
     override fun toString(): String = buildString {
-        appendLine("=================")
-        appendLine("${method.name()} $url ${version.text()}")
+        appendLine("$httpMethod $httpUrl $httpVersion")
         headers.forEach {
             appendLine("${it.key}: ${it.value}")
         }
         appendLine()
-        appendLine(body.toString(Charset.defaultCharset()))
-        appendLine("================= FROM BUFFER:")
-        appendLine(reference.readerIndex(0).toString(Charset.defaultCharset()))
-        appendLine("=================")
+        appendLine(httpBody)
     }
 
     class Builder: HttpBuilder() {
         var decodeResult: DecoderResult = DecoderResult.SUCCESS
             private set
-        var version: VersionPointer? = null
+        var version: HTTPVersionFragment? = null
             private set
-        var method: MethodPointer? = null
+        var method: MethodFragment? = null
             private set
-        var url: StringPointer? = null
+        var url: TextFragment? = null
             private set
-        var headers: HeadersPointer? = null
+        var headers: HeaderFragments? = null
             private set
-        var bodyPosition: Int? = null
-            private set
-        var bodyLength: Int? = null
+        var body: TextFragment? = null
             private set
 
         override fun setDecodeResult(result: DecoderResult) {
             this.decodeResult = result
         }
 
-        fun setMethod(method: MethodPointer) {
+        fun setMethod(method: MethodFragment) {
             this.method = method
         }
 
-        fun setUrl(url: StringPointer) {
+        fun setUrl(url: TextFragment) {
             this.url = url
         }
 
-        fun setVersion(version: VersionPointer) {
+        fun setVersion(version: HTTPVersionFragment) {
             this.version = version
         }
 
-        fun setHeaders(headers: HeadersPointer) {
+        fun setHeaders(headers: HeaderFragments) {
             this.headers = headers
         }
 
-        fun setBodyLength(length: Int) {
-            this.bodyLength = length
+        fun setBody(body: TextFragment) {
+            this.body = body
         }
 
-        fun setBodyPosition(pos: Int) {
-            this.bodyPosition = pos
-        }
-
-        private fun createError(reference: ByteBuf, decoderResult: DecoderResult) = DirtyHttpRequest(MethodPointer(0, HttpMethod.GET), StringPointer(0,"/"), VersionPointer(0, HttpVersion.HTTP_1_1), HeadersPointer(0, 0, reference, mutableMapOf()), BodyPointer(reference, 0, 0), reference, decoderResult)
+        private fun createError(reference: ByteBuf, decoderResult: DecoderResult) = DirtyHttpRequest(MethodFragment(0, 0, reference), TextFragment(0, 0, reference), HTTPVersionFragment(0, 0, reference), HeaderFragments(mutableMapOf()), TextFragment(0, 0, reference), decoderResult)
 
         override fun build(reference: ByteBuf): DirtyHttpRequest = if (decodeResult.isSuccess) {
-            checkNotNull(bodyPosition) {"Body is required"}
-            checkNotNull(bodyLength) {"Body is required"}
-            val bodyPointer = if (bodyLength == 0) BodyPointer.Empty(reference, bodyPosition!!) else BodyPointer(reference, bodyPosition!!, bodyLength!!)
             DirtyHttpRequest(
                 checkNotNull(method) {"Reason is required"},
                 checkNotNull(url) {"Url is required"},
                 checkNotNull(version) {"Version is required"},
                 checkNotNull(headers) {"Header is required"},
-                bodyPointer,
-                reference
+                checkNotNull(body) {"Body is required"},
             )
         } else {
             createError(reference, decodeResult)

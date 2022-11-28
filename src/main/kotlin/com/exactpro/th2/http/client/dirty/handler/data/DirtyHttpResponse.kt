@@ -14,121 +14,74 @@
  * limitations under the License.
  */
 
-
 package com.exactpro.th2.http.client.dirty.handler.data
 
-import com.exactpro.th2.netty.bytebuf.util.replace
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.BodyPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.VersionPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.IntPointer
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.StringPointer
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HTTPVersionFragment
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.TextFragment
 import io.netty.buffer.ByteBuf
 import io.netty.handler.codec.DecoderResult
-import io.netty.handler.codec.http.HttpVersion
-import java.nio.charset.Charset
 
-class DirtyHttpResponse(httpVersion: VersionPointer, private val httpCode: IntPointer, private val httpReason: StringPointer, headers: HeadersPointer, httpBody: BodyPointer, reference: ByteBuf, decoderResult: DecoderResult = DecoderResult.SUCCESS): DirtyHttpMessage(httpVersion, headers, httpBody, reference, decoderResult) {
-
-    var code: Int
-        get() = httpCode.value
-        set(value) = this.httpCode.let {
-            reference.replace(it.position, reference.writerIndex(), value.toString())
-            it.value = value
-            settle()
-        }
-
-    var reason: String
-        get() = httpReason.value
-        set(value) = this.httpReason.let {
-            reference.replace(it.position, reference.writerIndex(), value)
-            it.value = value
-            settle()
-        }
-
-    override fun settle(startSum: Int): Int {
-        var sum = startSum
-        if (httpVersion.isModified() || sum > 0) {
-            sum = httpVersion.settleSingle(sum)
-        }
-        if (httpCode.isModified() || sum > 0) {
-            sum = httpVersion.settleSingle(sum)
-        }
-        if (httpReason.isModified() || sum > 0) {
-            sum = httpVersion.settleSingle(sum)
-        }
-        return super.settle(sum)
-    }
+class DirtyHttpResponse(httpVersion: HTTPVersionFragment, val httpCode: TextFragment, val httpReason: TextFragment, headers: HeaderFragments, httpBody: TextFragment, decoderResult: DecoderResult = DecoderResult.SUCCESS): DirtyHttpMessage(httpVersion, headers, httpBody, decoderResult) {
 
     override fun toString(): String = buildString {
-        appendLine("=================")
-        appendLine("${version.text()} $code $reason")
+        appendLine("$httpVersion $httpCode $httpReason")
         headers.forEach {
             appendLine("${it.key}: ${it.value}")
         }
         appendLine()
-        appendLine(body.toString(Charset.defaultCharset()))
-        appendLine("================= FROM BUFFER:")
-        appendLine(reference.readerIndex(0).toString(Charset.defaultCharset()))
-        appendLine("=================")
+        appendLine(httpBody)
     }
 
     class Builder: HttpBuilder() {
         var decodeResult: DecoderResult = DecoderResult.SUCCESS
             private set
-        var version: VersionPointer? = null
+        var version: HTTPVersionFragment? = null
             private set
-        var code: IntPointer? = null
+        var code: TextFragment? = null
             private set
-        var reason: StringPointer? = null
+        var reason: TextFragment? = null
             private set
-        var headers: HeadersPointer? = null
+        var headers: HeaderFragments? = null
             private set
-        var bodyPosition: Int? = null
+        var body: TextFragment? = null
             private set
-        var bodyLength: Int = 0
-            private set
+
 
         override fun setDecodeResult(result: DecoderResult) {
             this.decodeResult = result
         }
 
-        fun setVersion(version: VersionPointer) {
+        fun setVersion(version: HTTPVersionFragment) {
             this.version = version
         }
 
-        fun setCode(code: IntPointer) {
+        fun setCode(code: TextFragment) {
             this.code = code
         }
 
-        fun setReason(reason: StringPointer) {
+        fun setReason(reason: TextFragment) {
             this.reason = reason
         }
 
-        fun setHeaders(headers: HeadersPointer) {
+        fun setHeaders(headers: HeaderFragments) {
             this.headers = headers
         }
 
-        fun setBodyLength(length: Int) {
-            this.bodyLength = length
+        fun setBody(body: TextFragment) {
+            this.body = body
         }
 
-        fun setBodyPosition(pos: Int) {
-            this.bodyPosition = pos
-        }
-
-        private fun createError(reference: ByteBuf, decoderResult: DecoderResult) = DirtyHttpResponse(VersionPointer(0, HttpVersion.HTTP_1_1), IntPointer(0,0), StringPointer(0,""), HeadersPointer(0, 0, reference, mutableMapOf()), BodyPointer(reference, 0, 0), reference, decoderResult)
+        private fun createError(reference: ByteBuf, decoderResult: DecoderResult) = DirtyHttpResponse(HTTPVersionFragment(0, 0, reference), TextFragment(0,0, reference), TextFragment(0,0, reference), HeaderFragments(mutableMapOf()), TextFragment(0, 0, reference), decoderResult)
 
         override fun build(reference: ByteBuf): DirtyHttpResponse = if (decodeResult.isSuccess) {
-            checkNotNull(bodyPosition) {"Body is required"}
-            val bodyPointer = if (bodyLength == 0) BodyPointer.Empty(reference, bodyPosition!!) else BodyPointer(reference, bodyPosition!!, bodyLength)
             DirtyHttpResponse(
                 checkNotNull(version) {"Version is required"},
                 checkNotNull(code) {"Code is required"},
                 checkNotNull(reason) {"Reason is required"},
                 checkNotNull(headers) {"Header is required"},
-                bodyPointer,
-                reference
+                checkNotNull(body) {"Body is required"},
+                decodeResult
             )
         } else {
             createError(reference, decodeResult)

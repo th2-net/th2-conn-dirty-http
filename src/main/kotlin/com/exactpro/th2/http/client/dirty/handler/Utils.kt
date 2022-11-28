@@ -16,7 +16,7 @@
 
 package com.exactpro.th2.http.client.dirty.handler
 
-import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeadersPointer
+import com.exactpro.th2.http.client.dirty.handler.data.pointers.HeaderFragments
 import io.netty.buffer.ByteBuf
 import java.util.ServiceLoader
 
@@ -38,7 +38,7 @@ fun ByteBuf.forEachByteIndexed(byteProcessor: (index: Int, byte: Byte) -> Boolea
     }
 }
 
-fun HeadersPointer.HttpHeaderDetails.move(step: Int) {
+fun HeaderFragments.HttpHeaderDetails.move(step: Int) {
     this.start += step
     this.end += step
 }
