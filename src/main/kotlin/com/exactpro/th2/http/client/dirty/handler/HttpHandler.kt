@@ -19,167 +19,151 @@ package com.exactpro.th2.http.client.dirty.handler
 import com.exactpro.th2.common.grpc.MessageID
 import com.exactpro.th2.common.grpc.RawMessage
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
+import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel.SendMode.HANDLE_AND_MANGLE
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandler
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext
 import com.exactpro.th2.conn.dirty.tcp.core.util.eventId
 import com.exactpro.th2.conn.dirty.tcp.core.util.toByteBuf
-import com.exactpro.th2.http.client.dirty.handler.codec.DirtyHttpClientCodec
-import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpMessage
-import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
-import com.exactpro.th2.http.client.dirty.handler.stateapi.IState
+import com.exactpro.th2.http.client.dirty.handler.api.ISessionManager
+import com.exactpro.th2.netty.bytebuf.util.contains
 import com.google.auto.service.AutoService
 import io.netty.buffer.ByteBuf
-import io.netty.handler.codec.http.HttpMethod
+import io.netty.buffer.ByteBufInputStream
+import io.netty.buffer.ByteBufOutputStream
+import io.netty.buffer.ByteBufUtil
+import io.netty.buffer.DuplicatedByteBuf
 import mu.KotlinLogging
-import org.apache.commons.lang3.exception.ExceptionUtils
+import rawhttp.core.RawHttpRequest
+import rawhttp.core.RawHttpResponse
+import rawhttp.core.RawHttpResponse.shouldCloseConnectionAfter
 import java.net.InetSocketAddress
-import java.util.Queue
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletableFuture.failedFuture
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
-
+import java.util.concurrent.TimeUnit.MILLISECONDS
+import kotlin.text.Charsets.UTF_8
 
 @AutoService(IHandler::class)
-open class HttpHandler(private val context: IHandlerContext, private val state: IState, private val settings: HttpHandlerSettings): IHandler {
-    private lateinit var hostValue: String
-
-    private val responseOutputQueue = ConcurrentLinkedQueue<DirtyHttpResponse>()
-
-    private val httpClientCodec = DirtyHttpClientCodec()
-
-    private val httpMode = AtomicReference(HttpMode.DEFAULT)
-    private val lastMethod = AtomicReference<HttpMethod?>(null)
-
-    private var isLastResponse = AtomicBoolean(false)
-    private val dialogueQueue: Queue<Pair<Map<String, String>, (DirtyHttpResponse) -> Unit>> = ConcurrentLinkedQueue()
-
-    private var address: InetSocketAddress = InetSocketAddress(settings.host, settings.port)
-
+class HttpHandler(
+    private val context: IHandlerContext,
+    private val manager: ISessionManager,
+    private val settings: HttpHandlerSettings,
+) : IHandler {
     @Volatile private lateinit var channel: IChannel
 
+    private val requests = ConcurrentLinkedQueue<RequestInfo>()
+
     override fun onStart() {
-        isLastResponse.set(false)
-        httpMode.set(HttpMode.DEFAULT)
-        lastMethod.set(null)
-        channel = context.createChannel(address, settings.security, mapOf(), false, 0L, Integer.MAX_VALUE)
-        channel.open()
+        channel = context.createChannel(
+            InetSocketAddress(settings.host, settings.port),
+            settings.security,
+            mapOf(),
+            false,
+            0L,
+            Integer.MAX_VALUE
+        ).also(IChannel::open)
     }
 
-    override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>) {
-        try {
-            when (val mode = httpMode.get()) {
-                HttpMode.DEFAULT -> httpClientCodec.onRequest(message.retain()).let { request ->
-                    isLastResponse.set(!request.isKeepAlive())
-                    settings.defaultHeaders.forEach {
-                        if (!request.headers.contains(it.key)){
-                            request.headers[it.key] = it.value.joinToString(", ")
-                        }
-                    }
-                    if (!request.headers.contains(HOST)){
-                        request.headers[HOST] = hostValue
-                    }
-                    lastMethod.set(request.method)
-                    state.onRequest(channel, request)
-                    LOGGER.debug { "Sending request: $request" }
-                    dialogueQueue.offer (metadata to { response: DirtyHttpResponse ->
-                        state.onResponse(channel, response, request)
-                    })
-                }
-                HttpMode.CONNECT -> LOGGER.trace { "$mode: Sending data passing as tcp package" }
-                else -> error("Unsupported http mode: $mode")
-            }
+    override fun onOpen(channel: IChannel) = manager.onOpen(channel)
+
+    override fun onReceive(channel: IChannel, buffer: ByteBuf): ByteBuf? {
+        if (!buffer.contains(BODY_SEPARATOR)) return null // to prevent RawHttp from parsing incomplete responses
+
+        val startIndex = buffer.readerIndex()
+
+        return try {
+            // copy instead of slice to prevent mangling of the last response before immediate channel close
+            ResponseByteBuf(buffer.readResponse(), buffer.copy(startIndex, buffer.readerIndex() - startIndex))
         } catch (e: Exception) {
-            LOGGER.error(e) { "Cannot handle request" }
-        } finally {
-            message.readerIndex(0)
+            buffer.readerIndex(startIndex)
+            LOGGER.trace(e) { "Failed to read (probably partial) response from buffer: ${buffer.hexDump}" }
+            null
         }
     }
 
     override fun onIncoming(channel: IChannel, message: ByteBuf): Map<String, String> {
-        when (val mode = httpMode.get()) {
-            HttpMode.DEFAULT -> responseOutputQueue.poll().let { response ->
-                if (response.decoderResult.isFailure) {
-                    throw response.decoderResult.cause()
-                }
-                LOGGER.debug { "Received response: $response" }
-                when {
-                    isLastResponse.get() || response.code >= 400 -> context.destroyChannel(channel)
-                    response.isKeepAlive() -> Unit
-                    else -> context.destroyChannel(channel) // all else are closing cases
-                }
+        val holder = requireNotNull(message as? ResponseByteBuf) { "Message is not a response byte buffer: $message" }
+        val response = holder.response
 
-                when(lastMethod.get()) {
-                    HttpMethod.CONNECT -> if (response.code == 200) httpMode.set(HttpMode.CONNECT)
-                }
+        LOGGER.debug { "Received response in session '${channel.sessionAlias}':\n${message.toString(UTF_8)}" }
 
-                return checkNotNull(dialogueQueue.poll()) {"Response must be received exactly for each request, there no response handlers in dialogue queue"}.let { (metadata, dialogue) ->
-                    dialogue.invoke(response)
-                    metadata
-                }
+        val info = checkNotNull(requests.poll()) { "No requests in queue for response in session '${channel.sessionAlias}':\n${message.toString(UTF_8)}" }
+        val request = info.request
+
+        manager.onResponse(channel, response, request)
+
+        if (shouldCloseConnectionAfter(response)) {
+            LOGGER.debug { "Server requested to close channel for session: ${channel.sessionAlias}" }
+            context.destroyChannel(channel)
+        }
+
+        return info.metadata + mapOf(METHOD_PROPERTY to request.method, URI_PROPERTY to request.uri.toString())
+    }
+
+    override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>) {
+        while (settings.sync && requests.isNotEmpty()) Thread.sleep(1)
+
+        val request = message.markReaderIndex().readRequest().also { message.resetReaderIndex() }
+
+        val preparedRequest = manager.onRequest(channel, request).run {
+            when {
+                uri.host != settings.host || uri.port != settings.port -> withRequestLine(startLine.withHost("${settings.host}:${settings.port}"))
+                else -> this
             }
-            HttpMode.CONNECT -> LOGGER.trace { "$mode: Received data passing as tcp package" }
-            else -> error("Unsupported http mode: $mode")
         }
 
-        return emptyMap()
+        if (request !== preparedRequest) message.clear().writeRequest(preparedRequest).resetReaderIndex()
+
+        LOGGER.debug { "Sending request in session '${channel.sessionAlias}':\n${message.toString(UTF_8)}" }
+        requests.offer(RequestInfo(preparedRequest, metadata))
     }
 
-    override fun onReceive(channel: IChannel, buffer: ByteBuf): ByteBuf? {
-        if (httpMode.get() == HttpMode.CONNECT) return buffer
-        return httpClientCodec.onResponse(buffer)?.let {
-            LOGGER.debug { "Response message was decoded" }
-            responseOutputQueue.offer(it)
-            it.reference
-        }
-    }
+    override fun send(message: RawMessage): CompletableFuture<MessageID> {
+        if (!channel.isOpen) channel.open().get(CONNECT_TIMEOUT, MILLISECONDS)
 
-    override fun send(message: RawMessage): CompletableFuture<MessageID> = checkNotNull(channel) { "To send message channel must be initialized" }.let { channel ->
-        if (!channel.isOpen) {
-            channel.runCatching { open().get() }.getOrElse { throw ExceptionUtils.rethrow(it) }
+        if (!manager.isReady) {
+            LOGGER.info { "Waiting for session to become ready" }
+            var timeout = READINESS_TIMEOUT
+            while (!manager.isReady && --timeout != 0L) Thread.sleep(1)
+            if (!manager.isReady) return failedFuture(IllegalStateException("Session did not become ready in $READINESS_TIMEOUT ms"))
+            LOGGER.info { "Session is ready" }
         }
 
-        if (!state.isReady) {
-            LOGGER.info { "Waiting for state to become ready" }
-            while (!state.isReady) Thread.sleep(1)
-            LOGGER.info { "State is ready" }
+        return channel.send(message.body.toByteBuf(), message.metadata.propertiesMap, message.eventId, HANDLE_AND_MANGLE).exceptionally {
+            manager.onError(channel, it)
+            throw it
         }
-
-        channel.send(message.body.toByteBuf(), message.metadata.propertiesMap, message.eventId, IChannel.SendMode.HANDLE_AND_MANGLE)
-    }
-
-    private fun DirtyHttpMessage.isKeepAlive(): Boolean {
-        return version.minorVersion() == 1 && !(this.headers[CONNECTION]?.equals("close", true) ?: false) || version.minorVersion() == 0 && this.headers[CONNECTION]?.equals("keep-alive", true) ?: false
     }
 
     override fun onClose(channel: IChannel) {
-        dialogueQueue.clear()
-        responseOutputQueue.clear()
-        state.onClose()
-        if (isLastResponse.get() || lastMethod.get() == HttpMethod.CONNECT) {
-            LOGGER.debug { "Closing channel due last request/response" }
-        }
+        if (requests.isNotEmpty()) LOGGER.warn { "Channel closed with ${requests.size} requests pending responses in session: ${channel.sessionAlias}" }
+        requests.clear()
+        manager.onClose(channel)
     }
 
-    override fun close() {
-        state.close()
-        httpClientCodec.close()
-    }
+    override fun close() = manager.close()
 
-    override fun onOpen(channel: IChannel) {
-        this.channel = channel
-        hostValue = channel.address.let { "${it.hostString}:${it.port}" }
-        state.onOpen(channel)
+    private data class RequestInfo(val request: RawHttpRequest, val metadata: Map<String, String>)
+
+    private class ResponseByteBuf(val response: RawHttpResponse<*>, buffer: ByteBuf) : DuplicatedByteBuf(buffer) {
+        override fun asReadOnly() = ResponseByteBuf(response, super.asReadOnly())
     }
 
     companion object {
-        private val LOGGER = KotlinLogging.logger { this::class.java.simpleName }
-        const val CONNECTION = "Connection"
-        const val HOST = "Host"
-    }
+        private val LOGGER = KotlinLogging.logger {}
+        private val BODY_SEPARATOR = "\r\n\r\n".toByteArray()
 
-    private enum class HttpMode {
-        CONNECT,
-        DEFAULT
+        private const val CONNECT_TIMEOUT = 5000L
+        private const val READINESS_TIMEOUT = 5000L
+
+        private const val METHOD_PROPERTY = "method"
+        private const val URI_PROPERTY = "uri"
+
+        val ByteBuf.hexDump: String
+            get() = ByteBufUtil.hexDump(this)
+
+        private fun ByteBuf.readRequest(): RawHttpRequest = ByteBufInputStream(this).use(RawHttpParser::parseRequest)
+        private fun ByteBuf.readResponse(): RawHttpResponse<*> = ByteBufInputStream(this).use(RawHttpParser::parseResponse)
+        fun ByteBuf.writeRequest(request: RawHttpRequest): ByteBuf = apply { ByteBufOutputStream(this).use(request::writeTo) }
     }
 }

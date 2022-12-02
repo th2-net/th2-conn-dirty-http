@@ -14,24 +14,27 @@
  * limitations under the License.
  */
 
-package com.exactpro.th2.http.client.dirty.handler.stateapi
+package com.exactpro.th2.http.client.dirty.handler.api
 
 import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
-import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpRequest
-import com.exactpro.th2.http.client.dirty.handler.data.DirtyHttpResponse
+import rawhttp.core.RawHttpRequest
+import rawhttp.core.RawHttpResponse
 
-interface IState: AutoCloseable {
+interface ISessionManager : AutoCloseable {
     val isReady: Boolean
+
     fun onOpen(channel: IChannel) = Unit
-    fun onRequest(channel: IChannel, request: DirtyHttpRequest) = Unit
-    fun onResponse(channel: IChannel, response: DirtyHttpResponse, request: DirtyHttpRequest) = Unit
-    fun onClose() = Unit
+    fun onRequest(channel: IChannel, request: RawHttpRequest): RawHttpRequest = request
+    fun onResponse(channel: IChannel, response: RawHttpResponse<*>, request: RawHttpRequest) = Unit
+    fun onError(channel: IChannel, cause: Throwable) = Unit
+    fun onClose(channel: IChannel) = Unit
+
     override fun close() = Unit
 }
 
-interface IStateSettings
+interface ISessionManagerSettings
 
-interface IStateFactory {
+interface ISessionManagerFactory {
     /**
      * Returns factory name
      */
@@ -40,7 +43,7 @@ interface IStateFactory {
     /**
      * Returns settings class of entities produced by this factory
      */
-    val settings: Class<out IStateSettings>
+    val settings: Class<out ISessionManagerSettings>
 
     /**
      * Creates an entity with provided [settings]
@@ -48,5 +51,5 @@ interface IStateFactory {
      * @param settings entity settings
      * @return entity instance
      */
-    fun create(settings: IStateSettings?): IState
+    fun create(settings: ISessionManagerSettings?): ISessionManager
 }

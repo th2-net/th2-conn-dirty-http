@@ -23,13 +23,13 @@ repositories {
     mavenCentral()
 
     maven {
-            name 'Sonatype_snapshots'
-            url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
+        name 'Sonatype_snapshots'
+        url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
     }
 
     maven {
-            name 'Sonatype_releases'
-            url 'https://s01.oss.sonatype.org/content/repositories/releases/'
+        name 'Sonatype_releases'
+        url 'https://s01.oss.sonatype.org/content/repositories/releases/'
     }
 
     configurations.all {
@@ -61,24 +61,25 @@ java {
 tasks.withType(PublishToMavenRepository) {
     onlyIf {
         (repository == publishing.repositories.nexusRepository &&
-            project.hasProperty('nexus_user') &&
-            project.hasProperty('nexus_password') &&
-            project.hasProperty('nexus_url')) ||
-        (repository == publishing.repositories.sonatype &&
-            project.hasProperty('sonatypeUsername') &&
-            project.hasProperty('sonatypePassword')) ||
-        (repository == publishing.repositories.localRepo)
+                project.hasProperty('nexus_user') &&
+                project.hasProperty('nexus_password') &&
+                project.hasProperty('nexus_url')) ||
+                (repository == publishing.repositories.sonatype &&
+                        project.hasProperty('sonatypeUsername') &&
+                        project.hasProperty('sonatypePassword')) ||
+                (repository == publishing.repositories.localRepo)
     }
 }
 tasks.withType(Sign) {
-    onlyIf { project.hasProperty('signingKey') &&
-        project.hasProperty('signingPassword')
+    onlyIf {
+        project.hasProperty('signingKey') &&
+                project.hasProperty('signingPassword')
     }
 }
 // disable running task 'initializeSonatypeStagingRepository' on a gitlab
-tasks.whenTaskAdded {task ->
-    if(task.name.equals('initializeSonatypeStagingRepository') &&
-        !(project.hasProperty('sonatypeUsername') && project.hasProperty('sonatypePassword'))
+tasks.whenTaskAdded { task ->
+    if (task.name.equals('initializeSonatypeStagingRepository') &&
+            !(project.hasProperty('sonatypeUsername') && project.hasProperty('sonatypePassword'))
     ) {
         task.enabled = false
     }
@@ -89,29 +90,29 @@ publishing {
         mavenJava(MavenPublication) {
             from(components.java)
             pom {
-              name = rootProject.name
-              packaging = 'jar'
-              description = rootProject.description
-              url = vcs_url
-              scm {
+                name = rootProject.name
+                packaging = 'jar'
+                description = rootProject.description
                 url = vcs_url
-              }
-              licenses {
-                license {
-                  name = 'The Apache License, Version 2.0'
-                  url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                scm {
+                    url = vcs_url
                 }
-              }
-              developers {
-                developer {
-                  id = 'developer'
-                  name = 'developer'
-                  email = 'developer@exactpro.com'
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
                 }
-              }
-              scm {
-                url = vcs_url
-              }
+                developers {
+                    developer {
+                        id = 'developer'
+                        name = 'developer'
+                        email = 'developer@exactpro.com'
+                    }
+                }
+                scm {
+                    url = vcs_url
+                }
             }
         }
     }
@@ -156,36 +157,23 @@ clean {
 dependencies {
     api platform('com.exactpro.th2:bom:3.2.0')
 
-    implementation group: 'com.exactpro.th2', name: 'common', version: '3.40.0-TH2-3789-2817159492-SNAPSHOT'
-    implementation group: 'com.exactpro.th2', name: 'common-utils', version: '0.0.1-dev-2427721512-SNAPSHOT'
-
-    implementation 'com.exactpro.th2:conn-dirty-tcp-core:2.0.0'
+    implementation 'com.exactpro.th2:common:3.40.0-TH2-3789-2817159492-SNAPSHOT'
+    implementation 'com.exactpro.th2:common-utils:0.0.1-dev-2427721512-SNAPSHOT'
+    implementation 'com.exactpro.th2:conn-dirty-tcp-core:2.0.2-dev-3638602922-SNAPSHOT'
     implementation 'com.exactpro.th2:netty-bytebuf-utils:0.0.1'
 
-    implementation "org.slf4j:slf4j-api:2.0.3"
-    implementation ("org.apache.logging.log4j:log4j-slf4j2-impl:2.19.0")
-    implementation("org.apache.logging.log4j:log4j-1.2-api:2.19.0")
-    implementation("org.apache.logging.log4j:log4j-api:2.19.0")
-    implementation("org.apache.logging.log4j:log4j-core:2.19.0")
-
-    implementation group: 'org.jetbrains.kotlin', name: 'kotlin-stdlib-jdk8'
-    implementation group: 'org.jetbrains.kotlin', name: 'kotlin-reflect'
-    implementation group: 'io.github.microutils', name: 'kotlin-logging', version: '1.7.9'
-
-
-    implementation group: 'com.fasterxml.jackson.module', name: 'jackson-module-kotlin', version: '2.11.2'
-
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
+    implementation 'org.jetbrains.kotlin:kotlin-reflect'
+    implementation 'io.github.microutils:kotlin-logging:3.0.4'
     implementation 'io.netty:netty-all:4.1.72.Final'
-
-    testImplementation group: 'org.jetbrains.kotlin', name: 'kotlin-test-junit5', version: kotlin_version
-    testImplementation 'com.exactpro.th2:conn-http-server:1.0.0-refactoring-2540923991-SNAPSHOT'
-    testImplementation group: 'com.athaydes.rawhttp', name: 'rawhttp-core', version: '2.4.1'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.8.2'
-    testImplementation 'org.mockito.kotlin:mockito-kotlin:4.0.0'
-
+    implementation 'com.athaydes.rawhttp:rawhttp-core:2.5.1'
+    implementation 'com.fasterxml.jackson.module:jackson-module-kotlin:2.11.2'
     implementation 'com.google.auto.service:auto-service:1.0.1'
+
     annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
     kapt 'com.google.auto.service:auto-service:1.0.1'
+
+    testImplementation group: 'org.jetbrains.kotlin', name: 'kotlin-test-junit5'
 }
 
 application {

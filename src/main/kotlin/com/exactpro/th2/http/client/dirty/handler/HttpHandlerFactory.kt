@@ -19,28 +19,26 @@ package com.exactpro.th2.http.client.dirty.handler
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerContext
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerFactory
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings
-import com.exactpro.th2.http.client.dirty.handler.stateapi.DefaultStateFactory
-import com.exactpro.th2.http.client.dirty.handler.stateapi.IStateFactory
+import com.exactpro.th2.http.client.dirty.handler.api.DefaultSessionManagerFactory
+import com.exactpro.th2.http.client.dirty.handler.api.ISessionManagerFactory
 import com.google.auto.service.AutoService
 import mu.KotlinLogging
 
 @AutoService(IHandlerFactory::class)
-class HttpHandlerFactory: IHandlerFactory {
-
-    private val stateFactory = load<IStateFactory>(DefaultStateFactory::class.java).also {
-        LOGGER.info { "Loaded state factory: ${it.name}" }
-    }
-
-    override val name: String
-        get() = HttpHandlerFactory::class.java.name
+class HttpHandlerFactory : IHandlerFactory {
+    override val name: String = HttpHandlerFactory::class.java.name
     override val settings: Class<out IHandlerSettings> = HttpHandlerSettings::class.java
 
+    private val managerFactory = load<ISessionManagerFactory>(DefaultSessionManagerFactory::class.java).also {
+        LOGGER.info { "Loaded session manager factory: ${it.name}" }
+    }
+
     override fun create(context: IHandlerContext): HttpHandler = (context.settings as HttpHandlerSettings).let { settings ->
-        HttpHandler(context, stateFactory.create(settings.stateSettings), settings)
+        HttpHandler(context, managerFactory.create(settings.session), settings)
     }
 
     companion object {
-        private val LOGGER = KotlinLogging.logger { this::class.java.simpleName }
+        private val LOGGER = KotlinLogging.logger {}
     }
 }
 

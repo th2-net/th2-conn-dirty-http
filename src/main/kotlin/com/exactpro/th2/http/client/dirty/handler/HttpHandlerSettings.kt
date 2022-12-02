@@ -16,11 +16,11 @@
 
 package com.exactpro.th2.http.client.dirty.handler
 
-import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel
+import com.exactpro.th2.conn.dirty.tcp.core.api.IChannel.Security
 import com.exactpro.th2.conn.dirty.tcp.core.api.IHandlerSettings
-import com.exactpro.th2.http.client.dirty.handler.stateapi.DefaultStateFactory
-import com.exactpro.th2.http.client.dirty.handler.stateapi.IStateFactory
-import com.exactpro.th2.http.client.dirty.handler.stateapi.IStateSettings
+import com.exactpro.th2.http.client.dirty.handler.api.DefaultSessionManagerFactory
+import com.exactpro.th2.http.client.dirty.handler.api.ISessionManagerFactory
+import com.exactpro.th2.http.client.dirty.handler.api.ISessionManagerSettings
 import com.fasterxml.jackson.core.JsonParser
 import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.JsonDeserializer
@@ -28,18 +28,16 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import com.google.auto.service.AutoService
 
 @AutoService(IHandlerSettings::class)
-class HttpHandlerSettings: IHandlerSettings {
-    var defaultHeaders: Map<String, List<String>> = mapOf()
+class HttpHandlerSettings(
+    val security: Security = Security(),
+    val host: String,
+    val port: Int = if (security.ssl) 443 else 80,
+    val sync: Boolean = false,
+    @JsonDeserialize(using = SessionManagerDeserializer::class) val session: ISessionManagerSettings? = null,
+) : IHandlerSettings
 
-    @JsonDeserialize(using = StateSettingsDeserializer::class)
-    var stateSettings: IStateSettings? = null
-
-    var validation = false
-    var host: String = ""
-    var port = 80
-    var security: IChannel.Security = IChannel.Security()
-}
-
-class StateSettingsDeserializer<T : IStateSettings>() : JsonDeserializer<T>() {
-    override fun deserialize(p: JsonParser, ctxt: DeserializationContext): T = p.readValueAs(load<IStateFactory>(DefaultStateFactory::class.java).settings) as T
+class SessionManagerDeserializer<T : ISessionManagerSettings>() : JsonDeserializer<T>() {
+    override fun deserialize(p: JsonParser, ctxt: DeserializationContext): T {
+        return p.readValueAs(load<ISessionManagerFactory>(DefaultSessionManagerFactory::class.java).settings) as T
+    }
 }
