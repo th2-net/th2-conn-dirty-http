@@ -209,3 +209,9 @@ compileTestKotlin {
 test {
     useJUnitPlatform()
 }
+
+configurations {
+    compileClasspath {
+        resolutionStrategy.activateDependencyLocking()
+    }
+}
