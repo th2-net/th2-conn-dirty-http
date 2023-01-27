@@ -1,4 +1,4 @@
-# th2-conn-dirty-http v.0.0.1
+# th2-conn-dirty-http v.0.1.0
 
 This microservice allows performing HTTP requests and receive HTTP responses. It also can perform basic authentication
 
@@ -7,18 +7,18 @@ This microservice allows performing HTTP requests and receive HTTP responses. It
 + *sessions* - list of session settings
 + *maxBatchSize* - max size of outgoing message batch (`1000` by default)
 + *maxFlushTime* - max message batch flush time (`1000` by default)
-+ *batchByGroup* - batch messages by group instead of session alias and direction (`true` by default)
 + *publishSentEvents* - enables/disables publish of "message sent" events (`true` by default)
 + *publishConnectEvents* - enables/disables publish of "connect/disconnect" events (`true` by default)
++ *sendLimit* - global send limit in bytes (`0` by default which means no limit)
++ *receiveLimit* - global receive limit in bytes (`0` by default which means no limit)
 
 ## Session settings
 
 + *sessionAlias* - session alias for incoming/outgoing th2 messages
-+ *sessionGroup* - session group for incoming/outgoing th2 messages
 + *handler* - handler settings
-+ *mangler* - mangler settings
++ *mangler* - mangler settings (`null` by default)
 
-**NOTE**: current implementation has no mangler so use `{}` as mangler settings
+**NOTE**: current implementation has no mangler
 
 ### Handler settings
 
@@ -67,12 +67,10 @@ spec:
   custom-config:
     maxBatchSize: 1000
     maxFlushTime: 1000
-    batchByGroup: true
     publishSentEvents: true
     publishConnectEvents: true
     sessions:
       - sessionAlias: client
-        sessionGroup: http
         mangler: { }
         handler:
           security:
@@ -98,11 +96,28 @@ spec:
       settings:
         storageOnDemand: false
         queueLength: 1000
-    - name: messages
+    - name: incoming_messages
       connection-type: mq
       attributes:
         - publish
+        - store
         - raw
+      filters:
+        - metadata:
+            - field-name: direction
+              expected-value: FIRST
+              operation: EQUAL
+    - name: outgoing_messages
+      connection-type: mq
+      attributes:
+        - publish
+        - store
+        - raw
+      filters:
+        - metadata:
+            - field-name: direction
+              expected-value: SECOND
+              operation: EQUAL
   extended-settings:
     service:
       enabled: false
@@ -114,3 +129,13 @@ spec:
         memory: 100Mi
         cpu: 100m
 ```
+
+# Changelog
+
+## 0.1.0
+
+* add option to set global send/receive limit
+* disable mangling if no mangler settings are specified
+* bump `common` dependency to `3.44.0`
+* bump `common-utils` dependency to `0.0.3`
+* bump `conn-dirty-tcp-core` dependency to `2.0.5`

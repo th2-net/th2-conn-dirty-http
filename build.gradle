@@ -157,9 +157,9 @@ clean {
 dependencies {
     api platform('com.exactpro.th2:bom:3.2.0')
 
-    implementation 'com.exactpro.th2:common:3.40.0-TH2-3789-2817159492-SNAPSHOT'
-    implementation 'com.exactpro.th2:common-utils:0.0.1-dev-2427721512-SNAPSHOT'
-    implementation 'com.exactpro.th2:conn-dirty-tcp-core:2.0.2-dev-3638602922-SNAPSHOT'
+    implementation 'com.exactpro.th2:common:3.44.0'
+    implementation 'com.exactpro.th2:common-utils:0.0.3'
+    implementation 'com.exactpro.th2:conn-dirty-tcp-core:2.0.5'
     implementation 'com.exactpro.th2:netty-bytebuf-utils:0.0.1'
 
     implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
