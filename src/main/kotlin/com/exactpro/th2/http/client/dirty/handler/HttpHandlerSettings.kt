@@ -32,9 +32,14 @@ class HttpHandlerSettings(
     val security: Security = Security(),
     val host: String,
     val port: Int = if (security.ssl) 443 else 80,
-    val sync: Boolean = false,
+    @Deprecated("set requestQueueSize to 0 instead") val sync: Boolean = false,
+    val requestQueueSize: Int = if (sync) 1 else 65536,
     @JsonDeserialize(using = SessionManagerDeserializer::class) val session: ISessionManagerSettings? = null,
-) : IHandlerSettings
+) : IHandlerSettings {
+    init {
+        check(requestQueueSize > 0) { "${::requestQueueSize.name} must be positive" }
+    }
+}
 
 class SessionManagerDeserializer<T : ISessionManagerSettings>() : JsonDeserializer<T>() {
     override fun deserialize(p: JsonParser, ctxt: DeserializationContext): T {

@@ -37,9 +37,9 @@ import rawhttp.core.RawHttpRequest
 import rawhttp.core.RawHttpResponse
 import rawhttp.core.RawHttpResponse.shouldCloseConnectionAfter
 import java.net.InetSocketAddress
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletableFuture.failedFuture
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import kotlin.text.Charsets.UTF_8
 
@@ -51,7 +51,7 @@ class HttpHandler(
 ) : IHandler {
     @Volatile private lateinit var channel: IChannel
 
-    private val requests = ConcurrentLinkedQueue<RequestInfo>()
+    private val requests = ArrayBlockingQueue<RequestInfo>(settings.requestQueueSize)
 
     override fun onStart() {
         channel = context.createChannel(
@@ -101,7 +101,13 @@ class HttpHandler(
     }
 
     override fun onOutgoing(channel: IChannel, message: ByteBuf, metadata: MutableMap<String, String>) {
-        while (settings.sync && requests.isNotEmpty()) Thread.sleep(1)
+        if (requests.remainingCapacity() == 0) {
+            LOGGER.warn { "Request queue is full for session: ${channel.sessionAlias}" }
+            var timeout = READINESS_TIMEOUT
+            while (requests.remainingCapacity() == 0 && --timeout != 0L) Thread.sleep(1)
+            if (requests.remainingCapacity() == 0) throw IllegalStateException("Request queue has been full for $READINESS_TIMEOUT ms for session: ${channel.sessionAlias}")
+            LOGGER.info { "Request queue is free for session: ${channel.sessionAlias}" }
+        }
 
         val request = message.markReaderIndex().readRequest().also { message.resetReaderIndex() }
 
@@ -122,11 +128,11 @@ class HttpHandler(
         if (!channel.isOpen) channel.open().get(CONNECT_TIMEOUT, MILLISECONDS)
 
         if (!manager.isReady) {
-            LOGGER.info { "Waiting for session to become ready" }
+            LOGGER.info { "Waiting for session to become ready: ${channel.sessionAlias}" }
             var timeout = READINESS_TIMEOUT
             while (!manager.isReady && --timeout != 0L) Thread.sleep(1)
             if (!manager.isReady) return failedFuture(IllegalStateException("Session did not become ready in $READINESS_TIMEOUT ms"))
-            LOGGER.info { "Session is ready" }
+            LOGGER.info { "Session is ready: ${channel.sessionAlias}" }
         }
 
         return channel.send(message.body.toByteBuf(), message.metadata.propertiesMap, message.eventId, HANDLE_AND_MANGLE).exceptionally {
