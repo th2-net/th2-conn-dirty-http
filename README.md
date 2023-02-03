@@ -1,4 +1,4 @@
-# th2-conn-dirty-http v.0.1.0
+# th2-conn-dirty-http v.0.2.0
 
 This microservice allows performing HTTP requests and receive HTTP responses. It also can perform basic authentication
 
@@ -25,6 +25,7 @@ This microservice allows performing HTTP requests and receive HTTP responses. It
 + *security* - security settings
 + *host* - server host
 + *port* - server port (by default `443` if `security.ssl` is `true` otherwise `80`)
++ *requestQueueSize* - max amount of pending (unanswered) requests (`65536` by default)
 + *session* - session settings
 
 #### Security settings
@@ -131,6 +132,10 @@ spec:
 ```
 
 # Changelog
+
+## 0.2.0
+
+* add `requestQueueSize` option to limit amount of pending requests
 
 ## 0.1.0
 
